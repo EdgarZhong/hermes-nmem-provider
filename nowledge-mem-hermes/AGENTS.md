@@ -1,6 +1,6 @@
 # Personal Hermes NM Provider
 
-The user-approved PHASE3.md overrides the inherited upstream behavioral guidance.
+The user's confirmed Phase 3 architectural decisions override inherited upstream behavioral guidance. docs/PHASE3.md distinguishes confirmed user requirements from Existing code, Target contracts, and expressly labeled engineering convergences awaiting user review; do not treat those convergences as earlier user approvals.
 
 - Keep one Memory Provider. Do not add MCP or nmem_* model tools.
 - NM Background Intelligence stays OFF; no automatic distillation or proactive Memory writes.
