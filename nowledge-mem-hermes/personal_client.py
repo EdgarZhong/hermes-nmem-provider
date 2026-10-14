@@ -37,7 +37,10 @@ class PersonalMemClient(NowledgeMemClient):
             with request.build_opener(_NoRedirect()).open(req, timeout=self._timeout) as response:
                 data = response.read(8 * 1024 * 1024 + 1)
         except error.HTTPError as exc:
-            raise MemHTTPError(exc.code) from None
+            # HTTPError owns a response stream too, including refused redirects.
+            status = exc.code
+            exc.close()
+            raise MemHTTPError(status) from None
         except (error.URLError, OSError, TimeoutError):
             raise RuntimeError("NM transport unavailable") from None
         if len(data) > 8 * 1024 * 1024:
