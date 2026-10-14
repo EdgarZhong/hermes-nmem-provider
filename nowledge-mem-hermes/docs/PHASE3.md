@@ -490,7 +490,7 @@ The new `start_time`/`end_time`, if supplied, filter the **matched original mess
 
 **Example only; text/IDs/timestamps are fabricated.**
 
-Required top-level fields: `success`, `mode`, `query`, `count` (number of **Conversation groups**), `match_count` (number of emitted matching Message rows), `partial` (true if output/candidate limits or index state preclude complete coverage), and `conversations`. Source-status details such as the existing FTS index-rebuild note may be included **only when true**, not invented.
+Required top-level fields: `success`, `mode`, `query`, `count` (number of **Conversation groups**), `match_count` (number of emitted matching Message rows), `partial` (true if output/candidate limits or index state preclude complete coverage), and `conversations`. When a lawful explicit foreign `profile` is searched, the response SHOULD report that selected profile **once at envelope level**, not once per message, and exact Read MUST resolve against the same selected profile. Source-status details such as the existing FTS index-rebuild note may be included **only when true**, not invented.
 
 Required group fields: `conversation_ref` (full), `title` (string or `null`), `created_at` (verified real Conversation start or `null`), `last_update_at` (verified last effective authentic Conversation message or `null`), `source` when known, `matches`. The group owns the Ref **once**; rows never repeat it. A group may include truthful `match_reason="title"` for a title-only match; it MUST NOT invent a matching Message if none exists. In this case `matches=[]` is permitted and correctly signals that precise evidence requires another search or an explicit known Message Identity.
 
@@ -565,6 +565,7 @@ Return Secretary-facing grouped JSON
 **Critical invariants:**
 
 - Physical Session lineage alone is insufficient: one logical Conversation can span multiple physical Sessions, and a fork may inherit a physical message while receiving a new Conversation Ref.
+- A physical Session **without a proven Secretary `conversation_ref`** cannot be emitted as a logical Conversation group. This may include standalone Cron history in a host where those Sessions have no Secretary bindings. Such sessions remain accessible through the retained native legacy physical-Session interface to callers entitled to that interface; the new Secretary projection MUST NOT forge synthetic `conversation_ref` values or silently disguise physical Session IDs as them. This coverage boundary is an explicitly labeled engineering convergence (`6), not a claim that the user separately approved excluding Cron search history.
 - `messages.id` is a physical SQLite locator. It may guide internal FTS joins but MUST NOT be shown to the Secretary Main model as canonical provenance.
 - A copied `message_uid` can occur on another logical branch. Only the **pair** identifies the evidence.
 - `active=0, compacted=1` authentic archived messages remain eligible when still on the valid path; `active=0, compacted=0` superseded/rewound rows must be excluded.
@@ -680,7 +681,7 @@ A model-facing tool may have an actual transport/result size ceiling even when t
 }
 ~~~
 
-The response must explicitly identify `partial_content=true`, `total_chars`, actual returned `content_offset` and `next_offset` (or `null` after the last chunk). Chunks are **exact original substrings**, not summaries. The full message can be deterministically recovered through repeated calls. The normal unchunked precise Read MUST NOT silently degrade into chunk mode: first report an explicit limit with the recommended chunk-call shape if a complete response cannot be sent. Chunk lengths must be bounded by the actual host/tool maximum and validated; never allow an unbounded “return all” boolean.
+The response must explicitly identify `partial_content=true`, `total_chars`, actual returned `content_offset` and `next_offset` (or `null` after the last chunk). Define offset/length consistently in **Unicode code points of the decoded authentic text**, not bytes or token counts; tests must include Chinese text and multi-code-point emoji. Chunks are **exact original substrings**, not summaries. The full message can be deterministically recovered through repeated calls. The normal unchunked precise Read MUST NOT silently degrade into chunk mode: first report an explicit limit with the recommended chunk-call shape if a complete response cannot be sent. Chunk lengths must be bounded by the actual host/tool maximum and validated; never allow an unbounded “return all” boolean.
 
 This fallback is an **engineering convergence proposal**, not a claim that the current code already supports chunking. It is included so the user's “full content on keyed Read” invariant remains meaningful for oversized messages.
 
@@ -956,6 +957,8 @@ Updating this design file does **not** install the plugin on a real Hermes home,
 | C17 | Forked archive and physical Session IDs conflated | Separate logical main `conversation_ref` archive from standalone Cron `session_id`; no guessed Thread mapping | Matches actual Secretary ownership and one-plugin policy. |
 | C18 | Scope of “implemented” was unclear | Provider code/test state explicitly separated from still-unimplemented Core Search target and live E2E Verify items | Makes assignment, review and acceptance auditable. |
 | C19 | “Per-turn” was ambiguous about model-context persistence | Existing Hermes `api_content` may replay older candidate blocks; narrow, bounded index/Reminder is the current mitigation, not a one-turn-only deletion guarantee | Prevents hidden token-cost and prompt-cache assumptions; an ephemeral-only transport would be a separately authorized Core change. |
+| C20 | Search scope for standalone Cron with no Secretary Conversation Ref was undefined | New logical-Conversation projection emits **only proven** `conversation_ref` groups; unbound physical Cron/other Sessions stay in the native legacy interface, not a fabricated logical group | Preserves identity correctness; **needs user ratification if Cron histories must be discoverable from the new Main projection**. |
+| C21 | Explicit native cross-profile search has no visible scope identity in the new envelope | When an authorized `profile` is explicitly selected, return it once at envelope level and use the same profile for subsequent precise Read | Prevents mismatched evidence reads without adding UI routes or leaking a new cross-profile capability. |
 
 ### 6.3. Concrete integration blockers that must be verified, not silently “solved”
 
