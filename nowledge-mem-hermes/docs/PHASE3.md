@@ -350,9 +350,9 @@ The old native `before`/`after` are bounds on **physical Session start time**, a
 
 **Non-Main protection:** Tool registration as Secretary-wide code does not mean all auxiliary Agents may invoke every operation. Noting keeps Parent-only `session_history` and its dispatch whitelist. Other lawful auxiliary exposures, if any, must be explicitly bounded by their existing permissions; do not grant them cross-Conversation Read through a common native tool name.
 
-### 3.3. Exact Secretary Main Tool Schema — verbatim replacement target
+### 3.3. Canonical Secretary Tool Schema — verbatim replacement target
 
-**System Prompt text and tool schema are two different model inputs.** This subsection defines the complete, independently model-visible **function-calling schema**. The **System Prompt** replacement is frozen as a separate literal block in §3.15. Implementers MUST apply **both**; tool descriptions MUST NOT be treated as a substitute for the System Prompt guidance, or vice versa.
+**System Prompt text and tool schema are two different model inputs.** This subsection defines the one canonical Secretary **function-calling schema** (exposed to authorized model runtimes). The **System Prompt** replacement is frozen as a separate literal block in §3.15. Implementers MUST apply **both**; tool descriptions MUST NOT be treated as a substitute for the System Prompt guidance, or vice versa.
 
 **Target file:** `EdgarZhong/hermes-secretary/tools/session_search_tool.py` (native tool declaration and handler). **Target exposed tool name:** `session_search`, **unchanged**.
 
@@ -811,9 +811,9 @@ The Core acceptance suite MUST include all of the following (not only JSON shape
 - Tests run with realistic larger SessionDBs and capped query time; no unbounded per-Conversation full-history expansion or N+1 slow path.
 - The canonical `session_search` **Tool Schema** is advertised exactly, separately from the Main **System Prompt**; the copy-exact text targets in §3.3 and §3.15 agree with the dispatcher, with no native fallback on Noting-off, stale pinned roots or extra Noting privileges.
 
-### 3.15. System Prompt: exact Main-only Session Search Guidance replacement
+### 3.15. System Prompt: canonical Secretary Main Session Search Guidance replacement
 
-**This is a separate deliverable from the tool schema in §3.3.** A model receives both (a) the assembled System Prompt guidance and (b) the function `tools[]` schema. The new tool's description or argument descriptions MUST NOT be assumed to deliver the behavioral guidance below.
+**This is a separate deliverable from the canonical product Tool Schema in §3.3.** A model receives both (a) the assembled System Prompt guidance and (b) the function `tools[]` schema. The new tool's description or argument descriptions MUST NOT be assumed to deliver the behavioral guidance below.
 
 #### 3.15.1. Actual native insertion points (Existing, inspected)
 
@@ -855,34 +855,35 @@ Search `content` may be shortened around actual keyword hits, with ellipses join
 
 This is the only Phase 3 **replacement Search System Prompt text**. The existing native constant is taken over by Secretary rather than supplemented by an alternate `SECRETARY_SESSION_SEARCH_GUIDANCE` variant. Leave the inherited 02 `HISTORY_SEARCH_GUIDANCE` root text intact. Their brief shared current-Conversation-first principle is intentional; the two blocks enter through distinct native prompt assembly seams.
 
-#### 3.15.3. Exact selection and non-regression rules
+#### 3.15.3. Canonical insertion and no Noting-dependent fallback
 
-At `agent/system_prompt.py::_tool_guidance_block(agent)`, continue to include Search guidance **only when** `"session_search" in agent.valid_tool_names`. Select one of **two mutually exclusive** effective strings:
+**There is only one Secretary `session_search` Tool Schema (§3.3) and one Secretary `SESSION_SEARCH_GUIDANCE` literal (§3.15.2)**. The tool is a permanent Secretary Core History capability; there is no runtime switch between native and Secretary wording, schema or handler based on `noting.enabled`, local `/noting off`, Notebook availability or NM enablement.
 
-- **Eligible Secretary Main with the new `SECRETARY_SESSION_SEARCH_SCHEMA` genuinely present in its model-facing tools:** `SECRETARY_SESSION_SEARCH_GUIDANCE` **exactly once**.
-- **All native/legacy or auxiliary lawful runtimes using the original physical-Session schema:** existing upstream `SESSION_SEARCH_GUIDANCE` **byte-for-byte unchanged**.
+At `agent/system_prompt.py::_tool_guidance_block(agent)`, the new guide is part of the stable Main root when `session_search` is lawfully present. The updated tool surface MUST be bound for every eligible Main independently of Noting. The ordinary fork configuration that disables Noting MUST NOT remove `session_search`, remove the guidance, or cause a legacy physical-Session `session_search` contract to appear.
 
-**Do not** concatenate both search guidance strings. **Do not** globally replace the imported upstream constant because that would change disabled/non-Main/native Hermes behavior. The selector must use **trusted host-owned effective tool-surface state**, not a model-supplied `is_main` parameter. A possible implementation is a host-owned `_secretary_session_search_contract_active` flag set only by the actual Main tool-surface reconciliation after schema+handler activation; it must not be set from platform string alone. That flag/name is an implementation choice, **not** a preexisting Hermes API.
+If a non-Main runtime has a distinct, restricted lawful toolset, do **not** inject Main History Search guidance into that runtime merely because the Python module was imported. Do not present the legacy upstream guide instead as a “compatibility branch.” Any exposed tool remains governed by the **same canonical Secretary Schema plus runtime authorization checks**; Noting Child is limited to its Parent's `session_history` and the existing Noting dispatch whitelist.
 
-`HISTORY_SEARCH_GUIDANCE` is **additionally** injected by the existing `_guidance_parts(agent)` eligible-Main path. It remains independent of the global `noting.enabled` switch and of Notebook participation. If `session_search` itself is not exposed, do not introduce a phantom new Search guidance block; preserve the host's current rules for `session_history`.
+**Frozen 02 guidance remains additive:** `HISTORY_SEARCH_GUIDANCE` continues to be added once by `_guidance_parts(agent)` for every eligible Main, with identical text and behavior under Noting on/off. The updated `SESSION_SEARCH_GUIDANCE` occupies its existing tool-aware guidance location and is a different text block; it MUST NOT be misregistered as `HISTORY_SEARCH_GUIDANCE` or as a second copy of either block.
 
-**Prompt tier:** Search guidance is a stable, tool-aware root System Prompt section. It is **not** part of `prefetch()`, `pre_llm_call`, `api_content`, NM Working Memory or a per-Turn dynamic reminder. No retrieval result, timestamp, conversation title or NM candidate may be interpolated into this stable text.
+**Prompt tier:** The native History/Search guidance is stable root System Prompt content. It is **not** delivered by the NM Provider, `prefetch()`, `pre_llm_call`, `api_content`, NM Working Memory or a per-Turn Reminder. Do not interpolate runtime History results or an NM Candidate Index into the stable guidance.
 
 #### 3.15.4. Prompt cache, resumed roots and frozen Noting parity
 
-Changing a constant in source code does **not** prove that a preexisting long-lived Conversation sees it: Hermes persists/pins its root System Prompt, and `secretary/noting_surface.py::synchronize_main_read_prompt()` currently checks for the existing `HISTORY_SEARCH_GUIDANCE` and Notebook guidance, **not** for the new Search block.
+Changing the literal constant or registered Schema in source does **not** prove an already pinned long-lived Conversation immediately sees them. Hermes persists root System Prompts and pinned tool lists; `secretary/noting_surface.py::synchronize_main_read_prompt()` currently tests the presence of `HISTORY_SEARCH_GUIDANCE` and the existing Notebook guidance, not the replacement `SESSION_SEARCH_GUIDANCE`.
 
-**Target synchronization behavior:**
+**Target migration behavior:**
 
-1. For a genuinely new Main prompt build, apply the correct schema variant before `_guidance_parts()`, and assemble the new `SECRETARY_SESSION_SEARCH_GUIDANCE` once.
-2. For a **restored eligible Main** that has the new schema exposed but a pinned old root guidance, perform **one** real native Turn-boundary/root-persistence synchronization using the existing controlled prompt rebuild and tool-prefix persistence path; record the cache break. Do not mutate a live in-flight provider request or repeatedly rebuild every Turn.
-3. For an ordinary Hermes/non-Main runtime, never rebuild a root merely to insert the Secretary-only block.
-4. Preserve the frozen Noting Parent prefix/cache parity. A Noting Child may inherit an already-frozen Main root, but it does not independently gain the new `session_search` tool or a fresh Provider insertion; the appended child-only permitted tool list and dispatch whitelist remain authoritative.
-5. If schema activation fails or the new handler is unavailable, **do not** advertise the new System Prompt guidance describing unavailable modes. Keep the old legal tool surface and guidance together; report the feature as incomplete instead of claiming success.
+1. For a newly constructed eligible Secretary Main, register and bind the **single canonical Secretary Schema**, and assemble both the frozen `HISTORY_SEARCH_GUIDANCE` and the replacement `SESSION_SEARCH_GUIDANCE` exactly once. This is the same whether Noting is enabled or disabled, and whether the NM Provider is connected or not.
+2. For a restored pre-upgrade Main with an old pinned native `session_search` Schema or old `SESSION_SEARCH_GUIDANCE`, reconcile the full tool/prompt pair at a **legitimate native Turn/build boundary** and perform **at most one** required root/tool-schema persistence update for this software upgrade. Record the real cache break; do not silently retain a mismatched old Schema, and do not mutate an in-flight provider request.
+3. `/noting on`, `/noting off` and global Noting on/off MUST **NOT** drive the History tool's Schema/prompt changes or their rebuild. History semantics are permanent product-wide Main capabilities, not a Noting eligibility transition.
+4. Preserve Noting's actual Parent frozen prompt/tool prefix. A Noting Child can inherit that prefix for cache parity but MUST NOT independently gain cross-Conversation Search or Read permission; the appended child-only tool declaration and dispatcher whitelist remain authoritative.
+5. A missing/failed new Core handler or inability to synchronize a required Main prompt/Schema is an **explicit capability/integration failure**, **not** permission to automatically fall back to the original physical-Session `session_search` under Secretary. Keep the two model-visible surfaces consistent and report incomplete activation.
+6. Do not force a root rebuild for unrelated background agents only because the History code module changed. Any existing lawful restricted auxiliary tool usage must be separately reviewed for the new canonical contract, without granting new privileges.
 
-**Required tests:** assert exact text equality against this section; verify one and only one effective new Search block for active Main; zero new block in native/Noting/Cron/subagent profiles; unchanged 02 `HISTORY_SEARCH_GUIDANCE`; matched effective `tools[]` schema; cold Main, restored Main and Compaction root; one-time persisted migration and no per-Turn cache churn; frozen Noting prefix and whitelist; no accidental NM Context/Recall text in this native guidance.
+**Required tests:** exact byte-for-byte text equality for §3.15.2 and §3.3 string fields; one replacement Search guide plus one unchanged 02 `HISTORY_SEARCH_GUIDANCE` on eligible Main; **identical** tool Schema/Prompt with global Noting on/off and local `/noting on|off`; independence from NM and Notebook state; cold Main, restored old Main and Compaction continuation; one-time pinned-root upgrade without per-Turn churn; Noting child frozen prefix and strict dispatch permissions; no native physical-Session fallback after disabling Noting.
 
-**Specification authority note:** The user explicitly requested Phase 3 Search System Prompt tuning on 2026-10-14. The 02 §5.12 frozen `HISTORY_SEARCH_GUIDANCE` remains intact; this new, narrowly scoped **Main-only variant of the upstream native `SESSION_SEARCH_GUIDANCE`** is a Phase 3 additive target and does **not** constitute blanket permission to edit other frozen 02/06 prompt strings. The exact wording and any newly chosen gating implementation are Phase 3 target text and engineering convergence recorded in §6, not retroactively described as old user-approved wording.
+**Specification authority:** The 02 §5.12 frozen `HISTORY_SEARCH_GUIDANCE` text stays unchanged. The user requested System Prompt tuning earlier on 2026-10-14 and explicitly clarified later that both History tools are permanent Secretary product capabilities regardless of Noting. This is a **narrow authorized exception to the Noting-off native fallback principle** (§0.6), not blanket permission to rewrite unrelated 02/06 System Prompt sections.
+
 ---
 
 ## 4. Approved Memory Persistence and Hermes Provenance
