@@ -75,22 +75,25 @@ Phase 3 MUST NOT introduce: a second NM plugin; MCP bridge; `nmem_*` model tool 
 
 The existing Hermes SessionDB and Secretary identity tables remain the only truth for Hermes original evidence. The NM Thread store is an archival copy.
 
-### 0.6. Permanent Secretary History Base — explicit Noting-off exception (user decision 2026-10-14)
+### 0.6. Permanent History implementation, distinct native exposure rules (user clarification 2026-10-14)
 
-**User-confirmed product rule:** `session_history` and the redesigned `session_search` constitute **Secretary Core's permanent original-history and Hermes Provenance retrieval layer**. They are **not Noting features**. Every eligible user-facing Main in this **Hermes Secretary product** MUST receive the Secretary contracts for both tools **regardless of**:
+**User-confirmed invariant:** Once Hermes Secretary owns the History/Provenance implementation of `session_history` and `session_search`, disabling **Noting** does **not** restore the old physical-Session search implementation or change either tool's semantics. **Implementation ownership and tool exposure are separate questions.** These two tools retain their **preexisting, different exposure rules**; neither is gated by NM service availability or Noting participation.
 
-- global `noting.enabled=true|false`, or the owning Conversation's `/noting on|off` setting;
-- whether Notebook/Noting has any current or previous Snapshot;
-- whether NM Memory Provider, NM service, Context Bundle, automatic distillation or Memory Recall is available.
+**`session_history` — 02/04's existing special Main exposure contract:**
 
-`session_history` already satisfies this in the inspected 02/Core implementation: it is a Secretary-created current-Conversation tool with **no separate upstream `session_history` implementation to fall back to**. Phase 3 extends the same product-level permanence to `session_search`: its authoritative Secretary contract is **the canonical tool implementation in this fork**, not an optional replacement attached to Noting. Turning Noting off MUST NOT switch `session_search` to the old physical-Session API, replace its tool schema, replace its prompt guidance, remove lawful Main History access or change Hermes Message Identity semantics.
+- Every **eligible user-facing Main Conversation** MUST receive `session_history` **and the exact independent `HISTORY_SEARCH_GUIDANCE`**, regardless of per-platform templates, global/local Noting switches or Notebook availability. This existing Main add-on is implemented in `secretary/noting_surface.py::apply_main_read_surface()` and the root-prompt builder. Phase 3 MUST NOT remove or weaken it.
+- The dedicated **Noting Child** retains its lawful, **Parent-Conversation-only `session_history`** through the existing frozen-parent prefix, appended authoritative tool declaration and strict dispatch whitelist. It MUST NOT acquire cross-Conversation `session_search` through this exception.
+- Ordinary Cron, subagent, review, gateway background and other non-Main runtimes receive **no additional compulsory Main-only History injection**. **Do not indiscriminately remove existing lawful toolset exposure either.** The shared native `_HERMES_CORE_TOOLS` currently also contains `session_history`, so a non-Main runtime may have it through its ordinary template; its executable target and permissions remain limited by the host binding, not by a new Phase 3 Main grant.
 
-The general Secretary rule **“when a feature is not enabled, preserve native Hermes behavior”** continues to apply to **Noting-dependent features and unrelated native behavior**. It has this explicit, narrow **product-base exception for both History tools**. A missing/unavailable History backend is an error/degraded capability, **not** an instruction to silently reenable legacy physical-Session search.
+**`session_search` — native toolset-driven exposure remains unchanged:**
 
-**Authority remains separate from permanence:** The dedicated Noting Child retains only its authorized Parent's `session_history`. Generic background, Cron, delegate/tool-child and review runtimes receive no new cross-Conversation privilege merely because Secretary Main has it. Actual tool availability/dispatch MUST respect authorized runtime and profile boundaries; permanence never implies universal access from every Agent. Existing lawful auxiliary tool exposure, if any, MUST be security-audited against the new single contract rather than defaulting to the old one.
+- The canonical Secretary **implementation** replaces the registered native `session_search` handler and Tool Schema under **the same name, same `session_search` toolset registration and same native availability `check_fn`**. It MUST NOT create a new toolset, force the tool into every Main, add a Secretary-only enable switch, or bypass any legal native toolset choice.
+- Exposure follows the existing Hermes tool-selection machinery: platform composite defaults, explicitly configured `platform_toolsets.<platform>` selections, session/caller overrides, `agent.disabled_toolsets` final exclusions, `get_tool_definitions()` selection and `check_session_search_requirements()`. An eligible Main with `session_search` disabled via lawful native configuration **still receives compulsory `session_history`, but does not receive `session_search` or its tool-aware Search guidance**.
+- If Cron, an ordinary subagent, or another auxiliary runtime is **already lawfully given `session_search` by its native tools configuration**, Phase 3 does not strip or newly inject the tool because of runtime type. The same canonical implementation runs **subject to the host's existing profile/scope and execution permissions**. Tool availability is not a grant to invent a Conversation Ref or bypass privacy.
+- Turning global/local Noting off does **not** alter native `session_search` configuration, select an older handler/schema/prompt, or introduce a second legacy-mode provider. Turning NM off does not modify either History tool's stored-data semantics.
+- This deliberate History **implementation takeover** is the narrow exception to “Noting-off should otherwise behave like native Hermes.” It does **not** override the native `session_search` tool configuration/visibility mechanism.
 
-**Source status:** `session_history` independence from Noting is **Existing** (02 §2.3). Canonical, Noting-independent Secretary `session_search` and its updated Prompt/Schema are **Target** (not yet implemented by the separate Core repository).
-
+**Source status:** The `session_history` Main guarantee and Noting restriction are **Existing** in effective 02/04 and the current Core. The native `session_search` configuration/toolset path is **Existing** in `toolsets.py`, `hermes_cli/tools_config.py`, `model_tools.py` and the registered `check_fn`. The new logical-Conversation `session_search` implementation, new Schema and new native Search Guidance are **Target** in the separate Hermes Secretary Core repo, not yet implemented.
 
 ---
 
@@ -330,25 +333,56 @@ Its legacy output includes `session_id`, `match_message_id`, session title/link,
 
 Current `HISTORY_SEARCH_GUIDANCE` already says: use `session_history` first for earlier information in the same Conversation; use `session_search` when referring to another Conversation or when current Conversation history is insufficient. No duplicate new cross-Conversation tool or unrelated new root guidance is authorized.
 
-### 3.2. Canonical Secretary `session_search`: one tool, no Noting-dependent native fallback
+### 3.2. One canonical `session_search` implementation, unchanged native toolset exposure
 
-**Product-level Target, user-confirmed 2026-10-14:** The existing registry/tool name `session_search` is retained, but its **canonical behavior inside Hermes Secretary** becomes logical-Conversation History Search. This does **not** install a second wrapper tool, fork the model-facing schema, or keep a selectable original physical-Session mode for the Noting-disabled state. Eligible Main Conversations always use the same updated `session_search` interface and implementation (§3.3–§3.15), independent of Noting, Notebook and NM enablement.
+**Product-level Target:** Preserve the existing registry name `session_search` and its **native registration, selection and dispatch availability rules**, replacing **only its lower-level function Schema, Handler, logical-Conversation result projection, and corresponding tool-aware System Prompt guidance**. The canonical tool is not a Noting or NM feature. When a runtime is already entitled to the tool, it uses the same Secretary implementation regardless of Noting; when the native configuration excludes it, the tool stays absent.
 
-The canonical tool has three **explicit** modes, matching the existing `session_history` convention:
+The canonical tool has three **explicit** modes:
 
-- `mode="search"`: cross-Conversation keyword discovery, grouped results, bounded excerpts.
-- `mode="read"`: precise original-message evidence retrieval by canonical Message Identity, optionally with valid neighbors.
-- `mode="browse"`: bounded list of recent logical Conversations and their metadata, without a keyword query.
+- `mode="search"`: authorized cross-Conversation keyword discovery grouped by logical Conversation with bounded original excerpts.
+- `mode="read"`: precise authentic Message evidence by `(conversation_ref,message_uid)`, optionally with lawful same-Conversation neighbors.
+- `mode="browse"`: authorized recent logical Conversation metadata, without a keyword query.
 
-**No tool called `read`, `session_read` or `conversation_read` is created.** All modes belong to the one existing `session_search` tool. The model-facing schema MUST require `mode` and explain each operation without the legacy `session_id`/row-ID selectors.
+**This is all one registered tool.** No `read`, `session_read` or `conversation_read` tool is added. The model-facing Schema MUST require `mode`, and `session_search` MUST NOT fall back to physical-Session read when Noting is disabled.
 
-**Source reuse vs compatibility obligation:** The implementation SHOULD reuse the native FTS5/SQLite candidate search, ranking and time conversion code wherever correct. That **does not** mean the old physical-Session argument/response contract must remain publicly exposed in the Secretary product. Phase 3 **does not require** preserving native `session_search(query=...)`, `session_search(session_id=...)`, scroll-by-`around_message_id` or empty-argument physical Browse as callable model-facing compatibility paths. Such support MAY be retained behind an explicitly reviewed legacy adapter only for a *demonstrated external consumer*; it MUST NOT become a second advertised schema, a product feature toggle, a Noting-off fallback, a provenance identity or a bypass of authorization.
+#### 3.2.1. Native toolset and built-in platform template — Existing, preserve
 
-The old native `before`/`after` are bounds on **physical Session start time**, and `session_id`/`around_message_id` locate physical rows. They are documented in §3.1 solely as **Existing baseline facts**. The new `start_time`/`end_time` filter original Message timestamps; `context_before`/`context_after` count authorized neighbors. No legacy argument changes meaning silently.
+The inspected Hermes source declares the following **actual configuration chain**:
 
-**Main exposure:** `session_history` and `session_search` MUST be part of the eligible user-facing Secretary Main History capability independently of all Noting flags and of the NM Provider. Tool-surface binding and the stable System Prompt MUST follow the same canonical contract. Failure to load the new tool MUST be diagnosed, not hidden by showing an old schema or a native physical fallback.
+1. `toolsets.py::TOOLSETS["session_search"]` is a normal, user-configurable toolset that contains `["session_search"]`; the tool name also appears in `_HERMES_CORE_TOOLS`.
+2. Platform default combinations are registered in `hermes_cli/platforms.py`. Examples: `cli → hermes-cli`, `telegram → hermes-telegram`, `discord → hermes-discord`; `toolsets.py::_bundle()` expands those Hermes platform composites from the shared core, while intentionally restricted composites (e.g. webhook) have smaller membership. `hermes_cli/config_defaults.py` also supplies the default `toolsets: ["hermes-cli"]`.
+3. The existing `hermes tools` configurator lists **Session Search** as a standalone selectable option via `hermes_cli/tools_config.py::CONFIGURABLE_TOOLSETS`. A saved `platform_toolsets.<platform>` list controls that platform; an absent list falls back to the platform's registered default composite. **An explicitly saved empty/narrow list is not an instruction to add Search back.**
+4. `hermes_cli/tools_config.py::_get_platform_tools()` resolves actual platform choices and global `agent.disabled_toolsets` exclusions. Session-level `enabled_toolsets`/`disabled_toolsets` further constrain `model_tools.get_tool_definitions()`, where disabled tools are subtracted after enabling. Do not circumvent either layer.
+5. `tools/session_search_tool.py::registry.register(name="session_search",toolset="session_search",schema=SESSION_SEARCH_SCHEMA,handler=...,check_fn=check_session_search_requirements)` remains the registration seam. Its current `check_fn` verifies that the Hermes SQLite state database directory exists. Retain this legal readiness gate and adjust it only if real new backend requirements make a source-verified change necessary.
+6. `agent/system_prompt.py::_tool_guidance_block()` adds `SESSION_SEARCH_GUIDANCE` **only when the final current tool names actually include `session_search`**. This is already a native tool-aware Prompt gate; it must be retained.
 
-**Non-Main protection:** Tool registration as Secretary-wide code does not mean all auxiliary Agents may invoke every operation. Noting keeps Parent-only `session_history` and its dispatch whitelist. Other lawful auxiliary exposures, if any, must be explicitly bounded by their existing permissions; do not grant them cross-Conversation Read through a common native tool name.
+Illustrative native configuration entries — **examples**, not a required project default or a requested change to the user's actual profile:
+
+~~~yaml
+# Explicit per-platform selection: Session Search is available when enabled
+# in this toolset list and its readiness check passes.
+platform_toolsets:
+  cli:
+    - web
+    - file
+    - session_search
+
+# Native global denylist example (alternative to an enabled selection):
+# agent:
+#   disabled_toolsets: [session_search]
+~~~
+
+Do NOT create `secretary.session_search_enabled`, `secretary.history_search_enabled`, a new Main-only `tools[]` injection, or a special Noting-off fallback. Do NOT modify default composites or the `hermes tools` checklist just to force the new tool; the existing configured availability is authoritative.
+
+#### 3.2.2. Separate existing `session_history` contract
+
+The 02/04 exception for `session_history` remains intact: eligible user Main always receives it (and `HISTORY_SEARCH_GUIDANCE`), even when native toolsets were narrowed; Noting receives only its Parent-bound permitted History. This **does not** mean `session_search` also bypasses native choices. The two tools share authentic Hermes evidence identity, **not** the same availability policy.
+
+#### 3.2.3. Replacing behavior, not access
+
+The rewritten handler MAY reuse native FTS5 candidates, SQLite index/ranking infrastructure, profile/time conversion, failure reporting and valid storage guards. It is **not** required to preserve legacy physical-Session model-facing argument shapes or a second Schema. Search/browse/read still validates every returned Conversation and Message Identity; valid tool exposure alone is not permission to fabricate an identity or read another profile contrary to current native policy.
+
+The prior native `before`/`after` filter physical Session start timestamps, while the new `start_time`/`end_time` filter source Message timestamps and `context_before`/`context_after` count authentic neighbors. Legacy selectors are reference implementation facts, not a reason to keep two model-facing modes.
 
 ### 3.3. Canonical Secretary Tool Schema — verbatim replacement target
 
