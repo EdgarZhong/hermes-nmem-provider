@@ -1,3 +1,18 @@
+# Personal Hermes 0.6.0 — 2026-10-14
+
+Fork-only delivery, based on official Hermes Provider 0.5.24. No npm/PyPI/marketplace publication.
+
+- Register one CLI-first policy Provider; retain upstream transport and normalization helpers.
+- Exclude Working Memory; freeze stable Context Bundle; remove proactive-save and nmem tool guidance.
+- Query-centered turn-start candidate pointers, bounded timeout/output; no queue_prefetch.
+- Main + independent cron main Thread capture; deny background/delegate/Noting Sessions.
+- Profile-scoped acknowledgement cursor; retry unacknowledged data; refuse divergent rewritten history.
+- Hermes source identities stored in Memory metadata via preview-first CLI helper with readback verification.
+- Explicit-home installer, unchanged MD backups, configuration preservation, policy and HTTP fixture tests.
+- Live Hermes/NM acceptance remains a separate deployment step; see docs/TEST_REPORT.md.
+
+---
+
 # Changelog
 
 ## [0.5.24] - 2026-09-18

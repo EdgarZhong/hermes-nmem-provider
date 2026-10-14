@@ -1,10 +1,5 @@
 name: nowledge-mem
-version: 0.5.24
-description: "Cross-tool personal knowledge graph with semantic search, Working Memory, and proactive recall."
-hooks:
-  - prefetch
-  - post_llm_call
-  - on_memory_write
-  - on_pre_compress
-  - on_session_end
-author: Nowledge Labs
+version: 0.6.0
+description: "Personal Hermes: static Context Bundle, lightweight recall, scoped Thread sync; CLI-first."
+hooks: []
+author: "Nowledge Labs; Personal Hermes fork"
