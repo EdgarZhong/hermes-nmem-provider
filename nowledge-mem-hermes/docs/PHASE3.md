@@ -1197,7 +1197,13 @@ This is a **specification rewrite and clarification**, not a blanket approval to
 - `docs/02-noting-system-specification.md` — especially §§2.2–2.4 and 5.12 for History Foreground, `session_history` schema/prompt, provenance, Compaction/Noting.
 - `docs/06-Hermes-Secretary-Web-UI-V1-Spec.md` — architectural authority/non-regression and no invented UI backend/API.
 - `tools/session_history_tool.py` — unchanged current-Conversation Search/Read, actual ~800-character Search behavior.
-- `tools/session_search_tool.py` — **existing legacy physical Session** discovery/read/scroll/browse and full schema.
+- `tools/session_search_tool.py` — original native physical-Session handler baseline; **retain** registry name `session_search`, `toolset="session_search"` and `check_fn`, but replace Schema/Handler in place.
+- `toolsets.py` — native `session_search` and `session_history` toolset entries, shared `_HERMES_CORE_TOOLS`, platform composite templates and restricted variants.
+- `hermes_cli/platforms.py` — per-platform default composite keys (e.g. CLI `hermes-cli`, Telegram `hermes-telegram`).
+- `hermes_cli/tools_config.py` — `hermes tools` options, `platform_toolsets` resolution, saved explicit choices, recent-toolset recovery, and global `agent.disabled_toolsets` pruning.
+- `hermes_cli/config_defaults.py` — default `toolsets: [hermes-cli]` and `agent.disabled_toolsets: []` baseline.
+- `model_tools.py` and `agent/agent_init.py` — final `enabled_toolsets`/`disabled_toolsets` schema selection at actual agent setup.
+- `agent/system_prompt.py::_tool_guidance_block()` — existing `SESSION_SEARCH_GUIDANCE` injection gated on the final `"session_search" in agent.valid_tool_names` condition.
 - `hermes_state_search.py` — existing FTS5/CJK/LIKE candidates and native `snippet()`.
 - `hermes_state_secretary_identity.py` — stable Conversation registry / resolution.
 - `hermes_state_secretary_foreground.py` — canonical effective History Foreground and Message Identity, including valid forks/Compaction/rewind.
