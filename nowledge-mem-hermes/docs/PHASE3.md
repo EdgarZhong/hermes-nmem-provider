@@ -105,7 +105,7 @@ The existing Hermes SessionDB and Secretary identity tables remain the only trut
 | Source type | Search/Browse result shape | Message lookup identity | Long-term personal Hermes Provenance |
 | --- | --- | --- | --- |
 | Authorized genuine user Main, including legitimate Compaction continuation and user-created branch | **Conversation**; grouped by trustworthy `conversation_ref`; `message_uid` in each matching row | **(`conversation_ref`, `message_uid`)** via `session_search(mode="read",message_identity=...)` | **Yes**, after separate canonical evidence verification and user approval |
-| Native-search-visible unattended or auxiliary execution, notably an independent Cron run | **Session**; identified by actual owning physical `session_id`; `message_id` in each matching row | **(`session_id`, `message_id`)** via the **same** `session_search(mode="read",session_message_identity=...)` | **No**: a Session read locator is not an equivalent user-Conversation Message Identity |
+| Native-search-visible unattended or auxiliary execution, notably an independent Cron run | **Session**; identified by actual owning physical `session_id`; `message_id` in each matching row | **(`session_id`, `message_id`)** via the **same** `session_search(mode="read",session_message_locator=...)` | **No**: a Session read locator is not an equivalent user-Conversation Message Identity |
 
 **Fallback means output/evidence classification, NOT a Noting-dependent switch of tool implementation or an automatic second query when zero Conversations match.** Search/Browse include both legitimate kinds by default (`scope="all"`), demoting Cron in ranking as native Hermes does; callers may explicitly use `scope="sessions"` to inspect unattended runs or `scope="conversations"` to narrow to user discussions. Every result is labeled and rendered under the correct identity type. No Session result may fabricate, inherit, alias or display `conversation_ref` as its public identity.
 
@@ -409,20 +409,16 @@ The rewritten handler MAY reuse native FTS5 candidates, SQLite index/ranking inf
 
 The prior native `before`/`after` filter physical Session start timestamps, while the new `start_time`/`end_time` filter source Message timestamps and `context_before`/`context_after` count authentic neighbors. Legacy selectors are reference implementation facts, not a reason to keep two model-facing modes.
 
-### 3.3. Canonical Secretary Tool Schema — verbatim replacement target
+### 3.3. Canonical single-tool Schema — exact replacement for both result kinds
 
-**System Prompt text and tool schema are two different model inputs.** This subsection defines the one canonical Secretary **function-calling schema** (exposed to authorized model runtimes). The **System Prompt** replacement is frozen as a separate literal block in §3.15. Implementers MUST apply **both**; tool descriptions MUST NOT be treated as a substitute for the System Prompt guidance, or vice versa.
+**System Prompt and tool schema are distinct model inputs.** This is the complete canonical Hermes Secretary model-callable `session_search` Schema. Its **one native registered name/toolset/readiness check** remain unchanged (§3.2). Implementers MUST replace `tools/session_search_tool.py::SESSION_SEARCH_SCHEMA` with the **exact JSON string fields and semantically equivalent Python structure below**, update the handler accordingly, and separately copy the target System Prompt from §3.15.2. Do not show fields before the dispatcher really implements them. The Hermes function wrapper `{"type":"function","function":...}` is added by the existing registry and is not part of this source object.
 
-**Target file:** `EdgarZhong/hermes-secretary/tools/session_search_tool.py` (native tool declaration and handler). **Target exposed tool name:** `session_search`, **unchanged**.
-
-**Canonical Secretary schema constant:** replace the fork's existing `tools/session_search_tool.py::SESSION_SEARCH_SCHEMA` **with the JSON object below as the exact normalized function definition**. Preserve the name, descriptions, field names, types, enum members, defaults, bounds, required fields and `additionalProperties` values **verbatim**. When expressing this JSON in Python source, use Python's equivalent booleans (`False`) or a lossless JSON loader; the exposed schema MUST be byte-equivalent in string fields and semantically equivalent in JSON structure. The surrounding SDK wrapper `{"type":"function","function":...}` is added by the existing Hermes registry/tool surface and is **not** part of this literal.
-
-**Product-wide takeover:** In Hermes Secretary this JSON is the **single canonical `session_search` model-facing Schema** wherever the tool is legally exposed. Do **not** keep a second native physical-Session Schema or select old/new Schemas according to `noting.enabled`. The dedicated Noting Child's restricted toolset remains authoritative and MUST NOT acquire this tool by virtue of shared registration. A historical native compatibility adapter, if independently justified, is not a second model-facing contract.
+`scope` is a **query/result-kind selector**, not a feature flag or permission grant. `scope="all"` is the default native-compatible behavior; `scope="sessions"` intentionally searches existing visible Cron/unattended Sessions even when interactive conversations would consume the first ranked slots. This is separate from `platform_toolsets` and other native tool visibility decisions.
 
 ~~~json
 {
   "name": "session_search",
-  "description": "Search original Hermes history across authorized logical Conversations, browse recent Conversation metadata, or precisely read an original Message by (conversation_ref, message_uid). One tool, three modes: search, browse, read. Search produces bounded match-centered excerpts; read returns exact original content or an explicit size error. Use session_history first for the current Conversation. No NM Memory search, physical Session IDs, or UI links.",
+  "description": "Search authentic Hermes history as two distinct result kinds: logical user Conversations identified by conversation_ref, and native-visible unattended Sessions (such as Cron) identified by physical session_id. Same tool supports search, browse, and exact read. Conversation evidence uses (conversation_ref,message_uid); Session exact read uses a physical (session_id,message_id) locator, never a personal Conversation Provenance key. Search returns bounded original match-centered excerpts; Read returns exact content or an explicit oversized-message error. The original native toolset configuration and access checks still control exposure.",
   "parameters": {
     "type": "object",
     "properties": {
@@ -433,11 +429,21 @@ The prior native `before`/`after` filter physical Session start timestamps, whil
           "browse",
           "read"
         ],
-        "description": "Required selector. search = cross-Conversation keyword discovery; browse = recent Conversation metadata; read = exact Message Identity evidence in the same session_search tool."
+        "description": "Required mode: search = keyword discovery across selected eligible Conversations and/or natively visible Sessions; browse = recent metadata; read = exact source content by one appropriate locator, all within this single tool."
+      },
+      "scope": {
+        "type": "string",
+        "enum": [
+          "all",
+          "conversations",
+          "sessions"
+        ],
+        "default": "all",
+        "description": "search/browse only. Default all returns both source kinds, with native Cron demotion when mixed; conversations returns authentic user Main Conversations only; sessions returns native-visible non-user execution Sessions only. Never widens profile/source authorization."
       },
       "query": {
         "type": "string",
-        "description": "Required only when mode=search. FTS5-compatible keywords, quoted phrases, AND/OR/NOT and supported prefix matching; not regex, vector or NM search."
+        "description": "Required for mode=search. Native FTS5-compatible keyword, phrase, AND/OR/NOT and prefix query across permitted result kinds. Not regex, vector similarity, or NM Memory search."
       },
       "roles": {
         "type": "array",
@@ -451,21 +457,21 @@ The prior native `before`/`after` filter physical Session start timestamps, whil
           ]
         },
         "uniqueItems": true,
-        "description": "search: eligible original message roles, default user+assistant. read: filter optional neighbors only; the addressed anchor is always included or explicitly rejected."
+        "description": "search: allowed original message roles, default user+assistant for both kinds. read: filter optional neighbors, never silently suppress the addressed anchor; not a test of human involvement."
       },
       "limit": {
         "type": "integer",
         "minimum": 1,
         "maximum": 10,
         "default": 3,
-        "description": "search/browse only. Maximum number of distinct logical Conversation groups, NOT message matches or physical Sessions."
+        "description": "search/browse only. Maximum number of combined Conversation + Session result groups (default 3, maximum 10), not individual message matches."
       },
-      "matches_per_conversation": {
+      "matches_per_group": {
         "type": "integer",
         "minimum": 1,
         "maximum": 5,
         "default": 2,
-        "description": "search only. Maximum matching original Message rows emitted per Conversation group; repeated physical compaction rows must be deduplicated."
+        "description": "search only. Maximum authentic matching message rows inside each Conversation or Session result group (default 2, max 5)."
       },
       "sort": {
         "type": "string",
@@ -475,7 +481,7 @@ The prior native `before`/`after` filter physical Session start timestamps, whil
           "oldest"
         ],
         "default": "relevance",
-        "description": "search only. Relevance by native FTS ranking, or chronological bias using verified original message timestamps."
+        "description": "search only. Relevance or verified-time bias; native Cron demotion applies when scope=all. With scope=sessions, rank eligible Session hits without unrelated user Conversation crowding."
       },
       "start_time": {
         "type": "string",
@@ -491,11 +497,19 @@ The prior native `before`/`after` filter physical Session start timestamps, whil
           "type": "string"
         },
         "maxItems": 20,
-        "description": "search/browse only. Exact opaque Conversation Refs already inspected; not legacy physical session_id values."
+        "description": "search/browse only. Exclude these exact opaque user Main Conversation Refs; this selector does not address non-user Sessions."
+      },
+      "exclude_session_ids": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        },
+        "maxItems": 20,
+        "description": "search/browse only. Exclude these exact physical native Session IDs; this selector does not address logical Conversations."
       },
       "message_identity": {
         "type": "object",
-        "description": "Required only for mode=read. Complete canonical Message Identity; it must exist on the selected Conversation's current valid History Foreground path.",
+        "description": "read only, for kind=conversation. Full canonical user-Conversation Message Identity from a Conversation result. Mutually exclusive with session_message_locator; never use for Cron or other non-user Sessions.",
         "properties": {
           "conversation_ref": {
             "type": "string",
@@ -512,30 +526,50 @@ The prior native `before`/`after` filter physical Session start timestamps, whil
         ],
         "additionalProperties": false
       },
+      "session_message_locator": {
+        "type": "object",
+        "description": "read only, for kind=session. A physical Session-local message locator returned by a Session result. Mutually exclusive with message_identity. This is NOT canonical Hermes personal Memory Provenance.",
+        "properties": {
+          "session_id": {
+            "type": "string",
+            "description": "Exact owning physical Session ID returned by a native-visible Session result; not a logical Conversation Ref."
+          },
+          "message_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Exact physical SQLite message row ID returned by that Session's matching message; not a message_uid."
+          }
+        },
+        "required": [
+          "session_id",
+          "message_id"
+        ],
+        "additionalProperties": false
+      },
       "context_before": {
         "type": "integer",
         "minimum": 0,
         "maximum": 20,
         "default": 0,
-        "description": "read only. Number of preceding valid logical messages in the same Conversation; never a time bound or a physical Session window."
+        "description": "read only. Number of valid neighboring messages before the anchor in the SAME logical Conversation or SAME owning physical Session, depending on the locator."
       },
       "context_after": {
         "type": "integer",
         "minimum": 0,
         "maximum": 20,
         "default": 0,
-        "description": "read only. Number of following valid logical messages in the same Conversation; never a time bound or a physical Session window."
+        "description": "read only. Number of valid neighboring messages after the anchor in the SAME logical Conversation or SAME owning physical Session, depending on the locator."
       },
       "content_offset": {
         "type": "integer",
         "minimum": 0,
-        "description": "read only. Unicode-code-point offset in exact anchor original content; use together with content_length for explicit chunk retrieval after a too-large result."
+        "description": "read only. Unicode code-point offset in exact original anchor content for either source kind; require content_length together; never silently truncate."
       },
       "content_length": {
         "type": "integer",
         "minimum": 1,
         "maximum": 12000,
-        "description": "read only. Maximum exact Unicode code points in one anchor content chunk, paired with content_offset; never silently chunks ordinary precise reads."
+        "description": "read only. Maximum exact Unicode code points of one anchor content chunk, paired with content_offset for an explicitly oversized Conversation or Session message."
       },
       "profile": {
         "type": "string",
@@ -550,17 +584,20 @@ The prior native `before`/`after` filter physical Session start timestamps, whil
 }
 ~~~
 
-**Mode-specific conditional validation is normative even though the portable schema object does not embed `oneOf` / `if-then`:** the Core handler MUST enforce the following table before querying the database; an invalid combination MUST return an explicit error, not silently enter a legacy mode.
+**Exact mode validation (the portable function schema is not a substitute for handler checks):**
 
-| Mode | Required | Permitted selectors | Invalid combinations |
+| Mode | Required | Allowed | Must reject |
 | --- | --- | --- | --- |
-| `search` | Nonempty `query` | `roles`, `limit`, `matches_per_conversation`, `sort`, `start_time`, `end_time`, `exclude_conversation_refs`, optionally a lawful `profile` | `message_identity`, `context_before/after`, `content_offset/length`; `detail="full"` or legacy Session arguments. |
-| `browse` | `mode` only | `limit`, `exclude_conversation_refs`, optionally lawful `profile` | `query`, `message_identity`, `matches_per_conversation`, `content_*` and unrelated Search/Read selectors. |
-| `read` | Complete `message_identity` | `context_before`, `context_after`, `roles` for neighbors, `content_offset` **together with** `content_length` only for explicit oversized-anchor chunking, optionally lawful `profile` | `query`, `limit`, `sort`, time-bound discovery selectors, `exclude_conversation_refs` or native `session_id`. |
+| `search` | Nonempty `query` | `scope`, `roles`, `limit`, `matches_per_group`, `sort`, `start_time`, `end_time`, `exclude_conversation_refs`, `exclude_session_ids`, authorized `profile` | `message_identity`, `session_message_locator`, `context_before/context_after`, `content_offset/content_length` and old native `session_id`-only modes |
+| `browse` | `mode` | `scope`, `limit`, `exclude_conversation_refs`, `exclude_session_ids`, authorized `profile` | `query`, `matches_per_group`, `sort`, `roles`, time filters, either read locator, all `content_*` |
+| `read` | **Exactly one** of full `message_identity` or full `session_message_locator` | `context_before`, `context_after`, `roles` (neighbors), `content_offset` **together with** `content_length` for explicit chunks, authorized `profile` | No locator; both locators; `scope`, `query`, `limit`, `matches_per_group`, `sort`, time filters, any exclude list |
 
-**Cardinality/offset convergence:** `limit=3` groups, `matches_per_conversation=2` hits/group and `context_before=context_after=0` are the initial defaults already stated in this specification. The explicit `content_length.maximum=12000` is a new implementation-level starting limit, **not a prior user-approved constant**; record it under §6.2. The actual server-side result budget can require a lower maximum, but MUST never silently truncate an ordinary Read. `content_offset` and `content_length` MUST be supplied together in chunk mode.
+**Identity types are not interchangeable.** `message_identity=(conversation_ref,message_uid)` is canonical Secretary user-Conversation evidence. `session_message_locator=(session_id,message_id)` is a physical locator usable for exact Session Read **only**, not a key in `metadata.hermes_provenance`. Handler MUST validate actual source class and canonical ownership, rather than assuming that the provided key names prove authenticity. Reject missing, mismatched, unauthorized or hidden-source locators.
 
-**No schema drift:** The canonical Secretary handler, all legally exposed `tools[]` Schemas, dispatch authorization, Main prompt, persisted pinned tool list and examples MUST agree, with identical Main semantics whether Noting is enabled or disabled. A Schema advertising an unimplemented `mode="read"` is a release blocker; an auxiliary caller bypassing runtime permissions is an authorization bug.
+The default max `limit=3` counts **total groups across both arrays**. The default `matches_per_group=2` applies equally to Conversation and Session hits, max5. The `content_length.maximum=12000` initial code-point bound is a documented engineering default, not a numeric user approval. The new `scope`, `session_message_locator` and dual envelope are implementation-level convergences; no new Tool Schema variant or Main-only activation path is allowed.
+
+**No schema drift:** the exact Schema, model-visible System Prompt, dispatcher, source-classifier and persisted tool list MUST agree at actual host request boundaries. A model instruction to read a Session must refer to the same tool's `mode="read"` with `session_message_locator`, never invent `session_read` or present the physical locator as personal evidence provenance.
+
 ### 3.4. Search — model request and default selection
 
 ~~~json
