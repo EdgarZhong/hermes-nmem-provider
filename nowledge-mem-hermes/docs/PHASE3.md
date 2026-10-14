@@ -1294,24 +1294,25 @@ When NM eventually implements G1 and G2 with proven server-side message-level ba
 
 ### 5.3. Cross-cutting lifecycle and integration acceptance matrix
 
-| Scenario | NM Provider result | Hermes History/Search result | Required evidence |
+| Scenario | NM Provider behavior | Required Hermes History/Search result | Acceptance evidence |
 | --- | --- | --- | --- |
-| New Main with native default `session_search` enabled | Stable Bundle/Recall and completed-turn Thread sync per §1–2 | Compulsory `session_history`; native-selected canonical `session_search` + exact Search guidance | Native tool list, prompt, real SessionDB |
-| Main with native Search explicitly excluded (`platform_toolsets` or `agent.disabled_toolsets`) | Unrelated NM policy unchanged | **`session_history` remains mandatory**; `session_search` and its tool-aware guidance are absent | Saved-config and final-tool differential |
-| Main with global/local Noting off | NM governed by NM/provider policy, not Noting | `session_history` unchanged; `session_search` selection still follows native toolsets; **no physical-Session fallback** | Noting toggles with both enabled/disabled Search config |
-| Main with NM disabled or disconnected | No successful NM Context/Recall/Thread transport | Hermes History remains; `session_search` availability still depends on native tool configuration, not NM | Offline fault-injection and native tool list |
-| Main across rotating/in-place Compaction | Same permitted logical archive and prompt-cache boundaries | Same valid Conversation Ref and source Message UIDs, stable Search contract if selected | Multi-generation History fixtures |
-| Main fork/new/reset | Separate effective NM archive identity | Different Conversation Refs; copied Message UIDs do not conflate evidence | Branch/reset acceptance |
-| Standalone Cron main | Own Thread sync; no own NM Bundle/Recall | Retains **native** configured Search visibility (which may include it); **no forced Main `session_history` injection** | Cron actual agent toolset and source |
-| Ordinary subagent/background child | No own NM context/retrieval/sync per §1.2 | No new tool injection or removal; existing lawful native Search choice and actual execution permission unchanged | Delegated/child actual tool list and dispatch |
-| Dedicated Noting Child | No independent NM Provider operations; frozen Parent prefix | Parent-bound `session_history`; **no arbitrary cross-Conversation `session_search`** | Noting whitelist + cache-parity |
-| NM timeout or invalid HTTP response | Graceful degraded context, no false Memory candidates or advanced archive cursor | Original Hermes History unaffected | Fault injection |
-| Thread append ack ambiguity | Retry within original Thread target, no exactly-once claim | Original Hermes evidence unaffected | Simulated server commit+timeout |
-| Rewind/edit archived prefix | Explicit archive reconciliation required | Invalidated source Messages not returned by History/Search | Rewrite fixture |
-| Memory with several provenance sources | Approved custom metadata + readback | Each canonical source pair precisely readable if authorized | Real canonical identity roundtrip |
-| 10,000+ char Search hit | No NM interaction required | True match-centered excerpts; exact keyed Read or explicit size handling | Large-source fixture |
-| Genuine upstream Hermes deployment (not the Secretary fork) | No Phase 3 requirement | No code/config changes in that external repository | Repo boundary inspection |
-| Cold resume/old pinned prompt | No stale wrong-scope Bundle | One lawful host-native Schema/prompt upgrade, **without changing the configured toolset selection** | Real restored Agent and prompt-cache trace |
+| Eligible Main, native Search enabled | Main stable Bundle/Recall and Thread sync per `1–2 | Compulsory current-only `session_history`; same native-enabled `session_search` now returns genuine Main Conversation identity | Actual tools/prompt + SessionDB |
+| Eligible Main, native Search disabled | Provider policy unchanged | `session_history` compulsory; `session_search` and its tool-aware guidance absent; no forced injection | Saved `platform_toolsets` / denylist |
+| Noting globally/local off | Noting policy only | History semantics unchanged; Search follows native toolsets, no legacy handler fallback | On/off differential |
+| NM unavailable | NM-specific context/sync degraded | Search still reads Hermes DB; normal native availability preserved | NM offline simulation |
+| Main rotating/in-place Compaction | Same valid NM archive | Native candidates retained but displayed under one certified `conversation_ref` with correct `message_uid` | Original physical vs logical fixture |
+| Main fork/new/reset/rewind | Distinct valid logical Main paths | Correct valid Conversation identity, excluding invalidated/superseded source content | Branch/reset acceptance |
+| Standalone Cron run | **NM Thread sync by own `session_id` only**, no own Bundle/Recall | **Native Search and Browse still include Cron**; `kind=session`, actual `session_id` + physical `message_id`; original Cron demotion retained | Original Cron FTS + native ranking |
+| Same query, Main + Cron + another native-visible non-user Session | No NM effect | Same native candidate order/Cron demotion after authorized Main logical fold; typed `result_rank` across arrays | Before/after candidate comparison |
+| Explicit `scope="sessions"`, CJK Cron query | No NM effect | Reuse native `search_messages` / `_search_cjk` / bounded LIKE; do not invent index or claim exhaustive no-hit | Native routed query/source tests |
+| Native-hidden `tool`, `subagent` or `kanban` in Discovery | No independent Provider sync/recall | **Remains hidden** in Discovery/Browse even with new DTO; `scope="sessions"` cannot unhide it | Original hidden-source tests |
+| Native explicitly addressed physical Session Read | No NM effect | Same host native direct-read profile scope; **do not wrongly apply Discovery-only hidden-source gate**; exact matched row ownership | Original direct Session read comparison |
+| Dedicated Noting Child | No independently injected NM context/sync | Parent-only `session_history`, frozen tool prefix, no arbitrary cross-Conversation Search | Cache/dispatch evidence |
+| NM retry/ambiguous Thread ack | At-least-once attempt with receipt discipline | No change to Hermes original transcript | Simulated commit+timeout |
+| Approved Memory with multiple sources | Metadata/write confirmation under existing approval | Each cited Main (`conversation_ref`,`message_uid`) precisely readable; Cron locator is **not** personal Provenance | Canonical source roundtrip |
+| Long original hit | No NM interaction | Match-centered authentic excerpt in **both kinds**; complete exact Read or honest chunk fallback | Large Main and Cron transcripts |
+| Legacy pinned prompt | No new Provider obligation | New Schema/guidance consistent after lawful one-time upgrade; native toolsets unchanged | Cold resume trace |
+| Unchanged upstream Hermes repository | No Phase 3 activation | No upstream tool/toolset/source policy changes | Diff boundary |
 
 ### 5.4. Required quality and factual-reporting gates
 
