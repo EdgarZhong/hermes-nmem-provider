@@ -598,37 +598,60 @@ The default max `limit=3` counts **total groups across both arrays**. The defaul
 
 **No schema drift:** the exact Schema, model-visible System Prompt, dispatcher, source-classifier and persisted tool list MUST agree at actual host request boundaries. A model instruction to read a Session must refer to the same tool's `mode="read"` with `session_message_locator`, never invent `session_read` or present the physical locator as personal evidence provenance.
 
-### 3.4. Search — model request and default selection
+### 3.4. Search — source-kind selection and native-compatible ranking
+
+**Default Search example, both kinds:**
 
 ~~~json
 {
   "mode": "search",
+  "scope": "all",
   "query": "\"memory governance\" OR provenance",
   "roles": ["user", "assistant"],
   "limit": 5,
-  "matches_per_conversation": 3,
+  "matches_per_group": 3,
   "sort": "relevance"
 }
 ~~~
 
-**Target defaults (engineering convergence, §6):** `limit=3` Conversation groups (inherited from native default/max10); `matches_per_conversation=2` (maximum5); `roles=["user","assistant"]`; `sort="relevance"`. When callers ask for `tool` or `system` roles, use the source's lawful search/index route and resource caps; the native tool-role search may take the slower LIKE path.
+**Explicit unattended Session search (use for a question specifically about Cron or another native-visible task):**
 
-`query` keeps the supported native FTS5 features, such as quoted phrases, `AND`, `OR`, `NOT` and prefixes; preserve CJK/trigram/LIKE fallback semantics. This is **keyword search**, not embedding/vector similarity. `session_history` retains its distinct `match="keyword"|"regex"` selector; do not silently add regex support to `session_search` and imply FTS5 can perform that regex.
+~~~json
+{"mode":"search","scope":"sessions","query":"scheduled report","limit":5}
+~~~
 
-The new `start_time`/`end_time`, if supplied, filter the **matched original message timestamps** and must be applied before applying the final distinct-Conversation result cap. The old native `after`/`before` were physical Session-start filters; they MUST NOT be silently reused as if equivalent, and they are **not required model-facing compatibility parameters** in the Secretary replacement.
+**Target defaults (engineering convergence):** `scope="all"`, `limit=3` total result groups (max10), `matches_per_group=2` authentic matching Messages per group (max5), `roles=["user","assistant"]`, `sort="relevance"`.
 
-### 3.5. Search — exact response envelope and grouped rows
+`scope` has exactly three values:
+
+- **`all`**: return eligible **Conversation** and native-visible **Session** groups in separate, labeled arrays. Give authenticated user Conversations the primary result slots; fill remaining result slots from legitimate Session results, including Cron, without pretending they belong to a Conversation. This is a **presentation/selection fallback**, not a second API call only after a complete zero-hit failure.
+- **`conversations`**: search only eligible user Main Conversation evidence. No non-user Session group is returned even if FTS finds one.
+- **`sessions`**: search only native-visible non-user Session history. **Do not require all Conversations to have zero hits** first. This route supports explicit Cron questions, and should push eligible source filtering toward SQLite to avoid an interactive-results scan limit starving Cron.
+
+The native baseline **permits Cron** and demotes `source="cron"` below interactive hits when the default broad search would otherwise return many repetitive job messages. Keep that anti-crowding policy in `scope="all"`. Inside an explicit `scope="sessions"` search, rank the authorized Session candidates using the requested relevance/time semantics without irrelevant user Conversations consuming the cap. Do not promise that the native Trigram/CJK index contains Cron: when the user explicitly targets Cron, use the source-constrained native FTS5 / bounded LIKE path as needed (§3.8).
+
+Keyword syntax reuses supported FTS5 features (`AND`, `OR`, `NOT`, quoted phrases, prefixes) and the existing CJK/LIKE fallback. This is **not vector/embedding search**, and no regex selector is added to `session_search`. The separate frozen `session_history` retains its existing `match="keyword"|"regex"` contract.
+
+`start_time` and `end_time` constrain actual matched Message timestamps **for both kinds**, before limiting the result groups; these are not the native physical Session-start `after/before` selectors. `exclude_conversation_refs` applies only to Conversation groups; `exclude_session_ids` applies only to Session groups. Neither selector expands caller authorization. Explicit authorized `profile` resolution continues to use native isolation rules.
+
+### 3.5. Search — exact two-kind response envelope and non-redundant groups
+
+**Normative mixed output example (fabricated test identities/timestamps; Session messages are not human dialogue):**
 
 ~~~json
 {
   "success": true,
   "mode": "search",
+  "scope": "all",
   "query": "memory governance",
-  "count": 1,
+  "count": 2,
+  "conversation_count": 1,
+  "session_count": 1,
   "match_count": 2,
   "partial": false,
   "conversations": [
     {
+      "kind": "conversation",
       "conversation_ref": "conv_a1b2c3d4e5f678901234567890abcdef",
       "title": "Secretary memory governance",
       "created_at": "2026-10-12T08:00:00+08:00",
@@ -641,12 +664,24 @@ The new `start_time`/`end_time`, if supplied, filter the **matched original mess
           "role": "user",
           "content": "…NM Server should own the long-term memory governance policy…",
           "truncated": true
-        },
+        }
+      ]
+    }
+  ],
+  "sessions": [
+    {
+      "kind": "session",
+      "session_id": "cron_example_20261014_091000",
+      "source": "cron",
+      "title": "Memory governance status report",
+      "started_at": "2026-10-14T09:10:00+08:00",
+      "last_active_at": "2026-10-14T09:12:00+08:00",
+      "matches": [
         {
-          "message_uid": "0123456789abcdef0123456789abcdef",
-          "timestamp": "2026-10-14T09:10:00+08:00",
+          "message_id": 5820,
+          "timestamp": "2026-10-14T09:11:00+08:00",
           "role": "assistant",
-          "content": "The temporary governance executor is Secretary Main."
+          "content": "Report completed; the job produced a status summary."
         }
       ]
     }
@@ -654,17 +689,17 @@ The new `start_time`/`end_time`, if supplied, filter the **matched original mess
 }
 ~~~
 
-**Example only; text/IDs/timestamps are fabricated.**
+**Envelope contract:** `success`, `mode`, `scope`, `query`, `count` (total groups across both arrays), `conversation_count`, `session_count`, `match_count` (total emitted Message hits), `partial`, `conversations` and `sessions` MUST be present on a successful Search. Counts MUST equal the actual emitted groups/rows. Empty types use `[]` and 0. A lawful explicit non-default `profile` can be reported **once at envelope level**, not once in every source row. Index rebuild and budget diagnostics are included only when actually observed.
 
-Required top-level fields: `success`, `mode`, `query`, `count` (number of **Conversation groups**), `match_count` (number of emitted matching Message rows), `partial` (true if output/candidate limits or index state preclude complete coverage), and `conversations`. When a lawful explicit foreign `profile` is searched, the response SHOULD report that selected profile **once at envelope level**, not once per message, and exact Read MUST resolve against the same selected profile. Source-status details such as the existing FTS index-rebuild note may be included **only when true**, not invented.
+**Conversation group** (`kind="conversation"`): `conversation_ref` **once per group**, authentic title or `null`, true `created_at` or `null`, `last_update_at` from last valid real User/Assistant interaction or `null`, real `source` when known, `matches`. Each hit has **full `message_uid`**, authentic timestamp, role, bounded original text excerpt and explicit `truncated` if any original content is omitted. Conversation results MUST NOT show model-facing physical Session IDs, physical `message_id`, `@session` UI links or a redundant per-hit `conversation_ref`.
 
-Required group fields: `conversation_ref` (full), `title` (string or `null`), `created_at` (verified real Conversation start or `null`), `last_update_at` (verified last effective authentic Conversation message or `null`), `source` when known, `matches`. The group owns the Ref **once**; rows never repeat it. A group may include truthful `match_reason="title"` for a title-only match; it MUST NOT invent a matching Message if none exists. In this case `matches=[]` is permitted and correctly signals that precise evidence requires another search or an explicit known Message Identity.
+**Session group** (`kind="session"`): exact **owning physical `session_id`**, `source` (e.g. `cron`), actual saved `title` or `null`, actual `started_at` or `null`, actual `last_active_at` or `null`, `matches`. Each Session hit has the exact physical **integer `message_id`**, original timestamp, role, same bounded and match-centered excerpt rules and `truncated` if abbreviated. The `message_id` is a **Session-local read locator**, **NOT** Secretary's `message_uid`/Conversation Provenance and not a long-term stable cross-database ID. Do not emit `conversation_ref`, `message_identity` or synthetic user-Conversation provenance on a Session result **even if `secretary_session_bindings` has a row for that physical Session**.
 
-Required matched row fields: `message_uid` (complete), `timestamp` (real entry time), `role`, `content` (original excerpt), optional `truncated:true`. `truncated` is omitted or false if the original entire body is actually present. No model-facing physical `message_id`, `session_id`, duplicate `message_identity` object, `parent_session_id`, `link` or `@session` UI navigation string.
+`sessions[].session_id` is deliberately permitted as a data locator **only on `kind=session` results**, unlike the privacy-preserving Conversation projection that never returns physical Session IDs. Neither kind includes fabricated user-facing UI navigation URLs/links. A source title match alone can produce an empty `matches:[]` group with a truthful `match_reason="title"`; never fabricate a source Message merely to make the group nonempty.
 
-**Time/metadata sources:** `secretary_conversations.created_at` is an **identity-registration timestamp**, potentially later than the actual legacy Conversation. It MUST NOT be relabeled as the original Conversation creation time. Prefer the earliest proven effective owning Session start for `created_at`; if unknown, `null`. Use the latest authentic effective **User/Assistant interaction message** timestamp for `last_update_at`, **not** a tool-only or background timer, Noting write, registry update, FTS rebuild, or arbitrary `sessions.last_activity_at`. A genuinely new fork's `created_at` is the branch Conversation's own proven start, not the oldest original message copied from its parent. Use a native actual title from a proven owning Session/continuation; do not summarize messages to synthesize a title.
+**Result ordering:** Pick group winners through a bounded authenticated source-aware ranking pipeline, prioritizing Conversations for `scope="all"` and preserving Cron's native demotion; then place the winners into the two expressly labeled arrays. `limit` caps their **combined** size. `scope="sessions"` exposes Session results without the Conversation priority. Both arrays are ordered within their own kind by the requested sort/ranking. Do not call `partial=false` exhaustive if finite index candidates, omitted groups or ongoing rebuild could materially hide matches.
 
-**Time representation:** Use a consistent timezone-aware timestamp format for the canonical Secretary projection; preserve exact underlying source instants and respect the profile's configured timezone on presentation. The frozen `session_history` output remains unchanged. The old native `session_search` response format is baseline history, **not** a product fallback requirement.
+**Dates:** For Conversation, do **not** use `secretary_conversations.created_at` as a substitute for original Conversation birth if it was only registry-insert time; use a proven owner Session origin or `null`. For `last_update_at`, use the last effective authentic human interaction, not a Noting/background timer or a tool-only row. For Session, use the corresponding physical `sessions.started_at` / bounded last-activity derivation; if not provable, use `null`. Format all exposed instants consistently with explicit timezone; do not invent a status label like `last_update_at` for a Cron Session and thereby imply user dialogue.
 
 ### 3.6. Search result selection: coverage before verbosity
 
