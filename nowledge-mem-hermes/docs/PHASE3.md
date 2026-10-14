@@ -75,6 +75,23 @@ Phase 3 MUST NOT introduce: a second NM plugin; MCP bridge; `nmem_*` model tool 
 
 The existing Hermes SessionDB and Secretary identity tables remain the only truth for Hermes original evidence. The NM Thread store is an archival copy.
 
+### 0.6. Permanent Secretary History Base — explicit Noting-off exception (user decision 2026-10-14)
+
+**User-confirmed product rule:** `session_history` and the redesigned `session_search` constitute **Secretary Core's permanent original-history and Hermes Provenance retrieval layer**. They are **not Noting features**. Every eligible user-facing Main in this **Hermes Secretary product** MUST receive the Secretary contracts for both tools **regardless of**:
+
+- global `noting.enabled=true|false`, or the owning Conversation's `/noting on|off` setting;
+- whether Notebook/Noting has any current or previous Snapshot;
+- whether NM Memory Provider, NM service, Context Bundle, automatic distillation or Memory Recall is available.
+
+`session_history` already satisfies this in the inspected 02/Core implementation: it is a Secretary-created current-Conversation tool with **no separate upstream `session_history` implementation to fall back to**. Phase 3 extends the same product-level permanence to `session_search`: its authoritative Secretary contract is **the canonical tool implementation in this fork**, not an optional replacement attached to Noting. Turning Noting off MUST NOT switch `session_search` to the old physical-Session API, replace its tool schema, replace its prompt guidance, remove lawful Main History access or change Hermes Message Identity semantics.
+
+The general Secretary rule **“when a feature is not enabled, preserve native Hermes behavior”** continues to apply to **Noting-dependent features and unrelated native behavior**. It has this explicit, narrow **product-base exception for both History tools**. A missing/unavailable History backend is an error/degraded capability, **not** an instruction to silently reenable legacy physical-Session search.
+
+**Authority remains separate from permanence:** The dedicated Noting Child retains only its authorized Parent's `session_history`. Generic background, Cron, delegate/tool-child and review runtimes receive no new cross-Conversation privilege merely because Secretary Main has it. Actual tool availability/dispatch MUST respect authorized runtime and profile boundaries; permanence never implies universal access from every Agent. Existing lawful auxiliary tool exposure, if any, MUST be security-audited against the new single contract rather than defaulting to the old one.
+
+**Source status:** `session_history` independence from Noting is **Existing** (02 §2.3). Canonical, Noting-independent Secretary `session_search` and its updated Prompt/Schema are **Target** (not yet implemented by the separate Core repository).
+
+
 ---
 
 ## 1. Plugin Scope, Installation, and Prompt Contract
@@ -313,21 +330,25 @@ Its legacy output includes `session_id`, `match_message_id`, session title/link,
 
 Current `HISTORY_SEARCH_GUIDANCE` already says: use `session_history` first for earlier information in the same Conversation; use `session_search` when referring to another Conversation or when current Conversation history is insufficient. No duplicate new cross-Conversation tool or unrelated new root guidance is authorized.
 
-### 3.2. One tool with two layers of compatibility
+### 3.2. Canonical Secretary `session_search`: one tool, no Noting-dependent native fallback
 
-**Target:** preserve the **same registry/tool name** `session_search`. For eligible Secretary Main agents, advertise and handle its new **logical-Conversation projection** (§3.3–§3.15). For existing callers that intentionally use the native physical Session shapes, preserve those callable routes and semantics to avoid breaking upstream desktop, CLI, automation and other legal runtimes.
+**Product-level Target, user-confirmed 2026-10-14:** The existing registry/tool name `session_search` is retained, but its **canonical behavior inside Hermes Secretary** becomes logical-Conversation History Search. This does **not** install a second wrapper tool, fork the model-facing schema, or keep a selectable original physical-Session mode for the Noting-disabled state. Eligible Main Conversations always use the same updated `session_search` interface and implementation (§3.3–§3.15), independent of Noting, Notebook and NM enablement.
 
-The new Secretary-facing contract uses an **explicit `mode` selector**, modeled after `session_history`. The three Secretary-facing values are:
+The canonical tool has three **explicit** modes, matching the existing `session_history` convention:
 
 - `mode="search"`: cross-Conversation keyword discovery, grouped results, bounded excerpts.
-- `mode="read"`: precise original-message evidence retrieval by canonical Message Identity, optionally with neighbor messages.
-- `mode="browse"`: bounded list of recent logical Conversations and their metadata, without running a keyword query.
+- `mode="read"`: precise original-message evidence retrieval by canonical Message Identity, optionally with valid neighbors.
+- `mode="browse"`: bounded list of recent logical Conversations and their metadata, without a keyword query.
 
-**No tool called `read` or `session_read` exists.** The words Search and Read in this specification describe operations **inside `session_search`**, just as they do inside `session_history`.
+**No tool called `read`, `session_read` or `conversation_read` is created.** All modes belong to the one existing `session_search` tool. The model-facing schema MUST require `mode` and explain each operation without the legacy `session_id`/row-ID selectors.
 
-For the Secretary-facing schema, `mode` is required. A bridge may continue to recognize the old argument-inferred native shapes for legacy call sites, but MUST NOT treat a missing `message_identity` as permission to read an entire Conversation or to guess a Message UID. A new caller's schema MUST make mode/parameter requirements clear.
+**Source reuse vs compatibility obligation:** The implementation SHOULD reuse the native FTS5/SQLite candidate search, ranking and time conversion code wherever correct. That **does not** mean the old physical-Session argument/response contract must remain publicly exposed in the Secretary product. Phase 3 **does not require** preserving native `session_search(query=...)`, `session_search(session_id=...)`, scroll-by-`around_message_id` or empty-argument physical Browse as callable model-facing compatibility paths. Such support MAY be retained behind an explicitly reviewed legacy adapter only for a *demonstrated external consumer*; it MUST NOT become a second advertised schema, a product feature toggle, a Noting-off fallback, a provenance identity or a bypass of authorization.
 
-**Important existing compatibility:** Native `before`/`after` are *Session-start time bounds* in Discovery, while `around_message_id` and `session_id` are physical-Session locators. They MUST NOT be silently redefined to mean “two messages before/after” or the new logical-Conversation evidence identity. The new Secretary-facing schema uses different field names as shown next.
+The old native `before`/`after` are bounds on **physical Session start time**, and `session_id`/`around_message_id` locate physical rows. They are documented in §3.1 solely as **Existing baseline facts**. The new `start_time`/`end_time` filter original Message timestamps; `context_before`/`context_after` count authorized neighbors. No legacy argument changes meaning silently.
+
+**Main exposure:** `session_history` and `session_search` MUST be part of the eligible user-facing Secretary Main History capability independently of all Noting flags and of the NM Provider. Tool-surface binding and the stable System Prompt MUST follow the same canonical contract. Failure to load the new tool MUST be diagnosed, not hidden by showing an old schema or a native physical fallback.
+
+**Non-Main protection:** Tool registration as Secretary-wide code does not mean all auxiliary Agents may invoke every operation. Noting keeps Parent-only `session_history` and its dispatch whitelist. Other lawful auxiliary exposures, if any, must be explicitly bounded by their existing permissions; do not grant them cross-Conversation Read through a common native tool name.
 
 ### 3.3. Exact Secretary Main Tool Schema — verbatim replacement target
 
@@ -335,9 +356,9 @@ For the Secretary-facing schema, `mode` is required. A bridge may continue to re
 
 **Target file:** `EdgarZhong/hermes-secretary/tools/session_search_tool.py` (native tool declaration and handler). **Target exposed tool name:** `session_search`, **unchanged**.
 
-**Exact Secretary Main schema constant:** name the new source constant `SECRETARY_SESSION_SEARCH_SCHEMA` (engineering implementation name) and use **the JSON object below as the exact normalized function definition**. Preserve the name, descriptions, field names, types, enum members, defaults, bounds, required fields and `additionalProperties` values **verbatim**. When expressing this JSON in Python source, use Python's equivalent booleans (`False`) or a lossless JSON loader; the exposed schema MUST be byte-equivalent in string fields and semantically equivalent in JSON structure. The surrounding SDK wrapper `{"type":"function","function":...}` is added by the existing Hermes registry/tool surface and is **not** part of this literal.
+**Canonical Secretary schema constant:** replace the fork's existing `tools/session_search_tool.py::SESSION_SEARCH_SCHEMA` **with the JSON object below as the exact normalized function definition**. Preserve the name, descriptions, field names, types, enum members, defaults, bounds, required fields and `additionalProperties` values **verbatim**. When expressing this JSON in Python source, use Python's equivalent booleans (`False`) or a lossless JSON loader; the exposed schema MUST be byte-equivalent in string fields and semantically equivalent in JSON structure. The surrounding SDK wrapper `{"type":"function","function":...}` is added by the existing Hermes registry/tool surface and is **not** part of this literal.
 
-Do **not** globally replace the upstream `SESSION_SEARCH_SCHEMA` for ordinary/native callers. Retain that original physical-Session schema and let the trusted Secretary Main tool-surface selector advertise **this** variant under the **same name** only after the corresponding new dispatcher/mode handlers are wired and validated. These two schemas MUST NOT be exposed simultaneously in one Agent's tools list.
+**Product-wide takeover:** In Hermes Secretary this JSON is the **single canonical `session_search` model-facing Schema** wherever the tool is legally exposed. Do **not** keep a second native physical-Session Schema or select old/new Schemas according to `noting.enabled`. The dedicated Noting Child's restricted toolset remains authoritative and MUST NOT acquire this tool by virtue of shared registration. A historical native compatibility adapter, if independently justified, is not a second model-facing contract.
 
 ~~~json
 {
@@ -480,7 +501,7 @@ Do **not** globally replace the upstream `SESSION_SEARCH_SCHEMA` for ordinary/na
 
 **Cardinality/offset convergence:** `limit=3` groups, `matches_per_conversation=2` hits/group and `context_before=context_after=0` are the initial defaults already stated in this specification. The explicit `content_length.maximum=12000` is a new implementation-level starting limit, **not a prior user-approved constant**; record it under §6.2. The actual server-side result budget can require a lower maximum, but MUST never silently truncate an ordinary Read. `content_offset` and `content_length` MUST be supplied together in chunk mode.
 
-**No schema drift:** The handler validation, advertised Main `tools[]` schema, dispatcher, prompt, persisted pinned tool list and examples MUST agree. A schema that advertises an unimplemented `mode="read"` is a release blocker; a mode reachable through non-privileged native callers without trusted scope validation is an authorization bug.
+**No schema drift:** The canonical Secretary handler, all legally exposed `tools[]` Schemas, dispatch authorization, Main prompt, persisted pinned tool list and examples MUST agree, with identical Main semantics whether Noting is enabled or disabled. A Schema advertising an unimplemented `mode="read"` is a release blocker; an auxiliary caller bypassing runtime permissions is an authorization bug.
 ### 3.4. Search — model request and default selection
 
 ~~~json
@@ -498,7 +519,7 @@ Do **not** globally replace the upstream `SESSION_SEARCH_SCHEMA` for ordinary/na
 
 `query` keeps the supported native FTS5 features, such as quoted phrases, `AND`, `OR`, `NOT` and prefixes; preserve CJK/trigram/LIKE fallback semantics. This is **keyword search**, not embedding/vector similarity. `session_history` retains its distinct `match="keyword"|"regex"` selector; do not silently add regex support to `session_search` and imply FTS5 can perform that regex.
 
-The new `start_time`/`end_time`, if supplied, filter the **matched original message timestamps** and must be applied before applying the final distinct-Conversation result cap. Native legacy `after`/`before` filter Session-start time; they remain unmodified for legacy callers. Do not implement the new semantics by relabeling the old selectors.
+The new `start_time`/`end_time`, if supplied, filter the **matched original message timestamps** and must be applied before applying the final distinct-Conversation result cap. The old native `after`/`before` were physical Session-start filters; they MUST NOT be silently reused as if equivalent, and they are **not required model-facing compatibility parameters** in the Secretary replacement.
 
 ### 3.5. Search — exact response envelope and grouped rows
 
@@ -563,7 +584,7 @@ This priority favors breadth of evidence discovery. It does **not** require reta
 
 **Convergence defaults:** per returned Search message, a maximum of approximately **800 Unicode characters** including omission separators (consistent with the magnitude of `session_history` Search); response-wide maximum approximately **12,000 characters** for the Secretary projection. These are **initial engineering defaults for acceptance**, not previously user-frozen threshold values; see §6. Resource caps may be tuned from test evidence without changing Search-vs-Read semantics.
 
-No Search argument named `full`, `force_full` or `detail="full"` may bypass excerpt limits on the Secretary-facing projection. Native callers using the old `detail` field continue on the **separate legacy compatibility path**; they are not an excuse to return unrestricted content to the new Secretary Main tool surface.
+No Search argument named `full`, `force_full` or `detail="full"` may bypass excerpt limits. The old native `detail` switch is not part of the canonical Secretary Schema, even when Noting is off. Do not retain it as a disguised native fallback that returns unrestricted physical-Session content.
 
 ### 3.7. Match-centered content collapse (NOT head/tail cropping)
 
