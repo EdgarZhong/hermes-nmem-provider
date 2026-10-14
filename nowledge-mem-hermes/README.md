@@ -1,238 +1,120 @@
-# Nowledge Mem for Hermes Agent
+# Personal Hermes — Nowledge Mem Provider
 
-> Cross-tool knowledge, accessible in every Hermes session. Your decisions, procedures, and context travel with you.
+This is the **EdgarZhong Personal Hermes fork** of the official `nowledge-co/community/nowledge-mem-hermes` integration. It is not an upstream Nowledge release. Provider version: **0.6.0**. Original transport and normalization helpers remain in `client.py`, `provider.py` and `skill_outcome.py`; `personal_*.py` implements this fork's policy.
 
-Hermes has its own memory and learning system. Nowledge Mem complements it with knowledge that spans tools: insights from Claude Code, Cursor, Codex, Gemini, and every other environment you work in. One knowledge graph, available everywhere.
+## One provider, three responsibilities
 
-Hermes now asks new memory providers to ship outside the core `hermes-agent` tree. This community package is the supported Nowledge Mem distribution: it installs as a standalone provider in `~/.hermes/plugins/nowledge-mem/`, which Hermes discovers through its normal memory-provider lifecycle.
+| Runtime | Static NM Context Bundle | Turn-start candidate index | Completed-turn Thread sync |
+|---|---|---|---|
+| Interactive main Conversation | Yes, without Working Memory | Yes | Yes |
+| Independent cron task's own main Session | No | No | Yes |
+| Noting, delegate/subagent, review and other auxiliary runtimes | No | No | No |
 
-## Install
+No NM MCP server. No `nmem_*` model tools. No `queue_prefetch`, automatic distillation, MD mirroring or managed-skill outcome reporting. Agent-controlled NM operations use the existing terminal and `nmem` CLI. Background Intelligence must stay **disabled in NM itself**; this plugin does not change that setting.
 
-### Plugin (recommended, Hermes v0.7.0+)
+Notebook/Noting owns the current Conversation's working state. NM owns durable personal knowledge and user-managed personal context. Memory mutation still requires the existing Secretary approval mechanism. Full design: [docs/PHASE3.md](docs/PHASE3.md).
 
-The plugin integrates at the memory-provider level: Context Bundle loads automatically when available, Working Memory remains the lightweight fallback, relevant memories are recalled before every turn, and tools use clean names without the `mcp_` prefix.
+## Install from this fork
 
-```bash
-bash <(curl -sL https://raw.githubusercontent.com/nowledge-co/community/main/nowledge-mem-hermes/setup.sh)
-```
-
-On Windows, use the native PowerShell installer. Git Bash and WSL are not required:
-
-```powershell
-irm https://raw.githubusercontent.com/nowledge-co/community/main/nowledge-mem-hermes/setup.ps1 | iex
-```
-
-The installer is idempotent. If `~/.hermes/config.yaml` already has a `memory:` block, it now fills a missing or empty `provider` automatically. It still stops and explains the change when `memory.provider` already points at a different non-empty provider.
-
-Or with the interactive setup:
+Use Python from your Hermes environment (`PyYAML` is required by the installer). Do not run the upstream curl installer, which would replace this fork with upstream policy.
 
 ```bash
-hermes memory setup
-# Select: nowledge-mem
+git clone https://github.com/EdgarZhong/hermes-nmem-provider.git
+cd hermes-nmem-provider
+# Preview: no user profile or NM writes.
+python3 nowledge-mem-hermes/install_personal.py --home "$HOME/.hermes"
+# Install only after reviewing the preview.
+python3 nowledge-mem-hermes/install_personal.py --home "$HOME/.hermes" --apply
 ```
 
-Or manually:
+For another Hermes profile, supply its actual home. Windows uses the same Python installer with an explicit `--home`, or the checkout's `setup.ps1`. The installer backs up the previous plugin and config, preserves other configuration, does not delete MEMORY.md/USER.md, and sets:
 
-1. Copy plugin files to `~/.hermes/plugins/nowledge-mem/`:
-   ```bash
-   mkdir -p ~/.hermes/plugins/nowledge-mem
-   cd ~/.hermes/plugins/nowledge-mem
-   for f in plugin.yaml __init__.py provider.py client.py; do
-     curl -sLO "https://raw.githubusercontent.com/nowledge-co/community/main/nowledge-mem-hermes/$f"
-   done
-   ```
-2. Set the provider in `~/.hermes/config.yaml`:
-   ```yaml
-   memory:
-     provider: "nowledge-mem"
-   ```
-3. Restart Hermes.
-
-### MCP only (any Hermes version)
-
-If you prefer the standard MCP connection or are on Hermes < v0.7.0:
-
-```bash
-bash <(curl -sL https://raw.githubusercontent.com/nowledge-co/community/main/nowledge-mem-hermes/setup.sh) --mcp
+```yaml
+memory:
+  provider: nowledge-mem
+  memory_enabled: false
+  user_profile_enabled: false
 ```
 
-Windows PowerShell:
-
-```powershell
-& ([scriptblock]::Create((irm https://raw.githubusercontent.com/nowledge-co/community/main/nowledge-mem-hermes/setup.ps1))) -Mcp
-```
-
-This adds the MCP server to `config.yaml` and installs behavioral guidance in `~/.hermes/SOUL.md`. Tools appear with the `mcp_nowledge_mem_` prefix.
-
-## Prerequisites
-
-1. **Nowledge Mem desktop app** running (or the server accessible on port 14242)
-2. **Hermes Agent** installed and configured
-3. **`nmem` CLI** available on PATH. If the desktop app is on the same machine, `nmem` is already bundled. Otherwise use `pip install nmem-cli`, or on Arch Linux use `yay -S nmem-cli` / `paru -S nmem-cli`.
-
-### Platform notes
-
-The installer is the same `setup.sh` on every platform but adapts where files land:
-
-| Platform | `HERMES_HOME` (when env var is unset) | `nmem` CLI shim |
-|----------|----------------------------------------|------------------|
-| Linux    | `~/.hermes`                            | `nmem` (PATH)    |
-| macOS    | `~/.hermes`                            | `nmem` (PATH)    |
-| Windows  | `%LOCALAPPDATA%\hermes` (e.g. `C:\Users\<you>\AppData\Local\hermes`) | `%LOCALAPPDATA%\Nowledge Mem\cli\nmem.cmd` (PATHEXT) |
-
-Windows users can run the native `setup.ps1` from PowerShell; Git Bash and WSL remain supported through `setup.sh` but are no longer prerequisites. Both installers mirror Hermes' platform-native path resolution and write to `%LOCALAPPDATA%\hermes`, not `~/.hermes`. They detect `python`, `python3`, or the `py -3` launcher, validate the complete plugin before replacing managed files, and never overwrite another active memory provider. The Hermes Python runtime locates `nmem.cmd` via `shutil.which` (which honors `PATHEXT`).
-
-## What the plugin does
-
-The plugin uses Hermes' memory provider lifecycle to replace manual Context Bundle / Working Memory reads and ad-hoc recall prompting with deterministic hooks:
-
-| Hook | What happens | Replaces |
-|------|-------------|----------|
-| `system_prompt_block` | Context Bundle injected into every session when available; falls back to Working Memory | Manual `read_context_bundle` / `read_working_memory` call |
-| `prefetch` | Relevant memories searched before each turn | "Search proactively" guidance in SOUL.md |
-| `sync_turn` | Completed turns captured as Mem thread messages as they finish | Waiting for session exit before transcript sync |
-| `post_llm_call` | Compatibility fallback that captures completed one-shot turns when Hermes routes the plugin through the general hook loader | Missed `hermes chat -q` transcript sync on affected builds |
-| `on_memory_write` | User profile facts from Hermes mirrored to Nowledge Mem | Nothing (new capability) |
-| `on_pre_compress` | Provides a best-effort recovery hint on Hermes builds that consume provider compression output | Manual compression notes |
-| `on_session_switch` | `/new`, `/reset`, resume, branch, and compression rotations move sync state to the correct Hermes session | Cross-session delta bleed |
-| `on_session_end` | Final session-boundary flush appends any transcript delta not already captured | Manual handoff-only thread save |
-| `get_tool_schemas` | 6 native tools with clean names | MCP tools with `mcp_nowledge_mem_` prefix |
-
-Durable knowledge saves still happen through the native `nmem_` tools. In addition, the provider captures cleaned Hermes transcript turns as Mem threads while the conversation runs, then performs a final delta flush at real session boundaries such as clean exit, `/new`, and `/reset`. The first write for each Hermes `session_id` imports a thread; later writes for that same session append only the delta. Transcript payloads use the Mem API directly so long sessions are not squeezed into shell arguments.
-
-For conversations that already existed before you installed the provider, run a historical import from the machine where Hermes is installed:
-
-```bash
-nmem t sync --from hermes          # preview only
-nmem t sync --from hermes --apply  # import ~/.hermes/state.db into Mem threads
-```
-
-This also works with remote Mem because the local `nmem` client reads Hermes' local SQLite database and uploads normalized threads to the configured Mem server. The command is safe to rerun: it uses the same Hermes `session_id` thread IDs as the live provider and appends with message deduplication.
-
-## Tools
-
-Plugin mode exposes tools directly (no prefix):
-
-| Tool | Purpose |
-|------|---------|
-| `nmem_search` | Search memories |
-| `nmem_save` | Save a decision, insight, or learning |
-| `nmem_update` | Refine an existing memory |
-| `nmem_delete` | Remove one or more memories |
-| `nmem_thread_search` | Search past conversations |
-| `nmem_thread_messages` | Fetch messages from a thread |
-
-Graph exploration tools (`neighbors`, `evolves`, `labels`) will be added when the `nmem` CLI supports them.
-
-## Hermes memory vs Nowledge Mem
-
-Hermes has a built-in memory system for facts within Hermes sessions. Nowledge Mem is complementary:
-
-- **Hermes memory**: Hermes-specific preferences, tool quirks, environment details
-- **Nowledge Mem**: Decisions, procedures, and learnings that future sessions in any tool should know about
-
-The plugin's `on_memory_write` hook automatically mirrors user profile facts from Hermes to Nowledge Mem, so cross-tool knowledge stays in sync.
-
-## Transport
-
-The plugin shells out to the `nmem` CLI for normal memory operations and posts large transcript payloads directly to the Mem API. The shared `nmem` client config still handles server URL, API key, and remote access configuration. No duplicate network config is needed in the plugin.
-
-If `nmem` is not on PATH, the plugin disables gracefully. On machines running the Nowledge Mem desktop app, `nmem` is already bundled. For remote-only setups: `pip install nmem-cli`.
+Do **not** disable the whole `memory` toolset: some Hermes versions also gate external provider Prompt blocks through it. Restart Hermes after install. New conversations load the new prompt; an already-pinned old root prompt may require a normal host rebuild/new conversation. The installer does not rewrite old conversation prompts or enable background intelligence.
 
 ## Configuration
 
-**No plugin-level network configuration needed.** The `nmem` CLI manages client-side connection settings. Configure remote access for this machine via `nmem config client`:
-
-```bash
-nmem config client set url https://your-server
-nmem config client set api-key your-key
-```
-
-This writes the local client config that Hermes reads through `nmem`. It is separate from server-side access settings like bind host or LAN allowlists.
-
-### Spaces
-
-Spaces are optional. The Hermes provider should usually own the ambient lane directly in `~/.hermes/nowledge-mem.json`:
+Connection credentials and URL stay in the normal `nmem` client configuration. No secrets in command arguments. The plugin's optional `$HERMES_HOME/nowledge-mem.json` controls policy budgets and the existing NM lane:
 
 ```json
 {
-  "timeout": 30,
-  "space": "Research Agent",
-  "space_by_identity": {
-    "research": "Research Agent",
-    "ops": "Operations Agent"
-  },
-  "space_template": "agent-{identity}"
+  "timeout": 8,
+  "recall_timeout": 2,
+  "recall_limit": 5,
+  "recall_max_chars": 2400,
+  "space": "",
+  "agent_identity": ""
 }
 ```
 
-Use `space` when one Hermes profile always belongs to one lane. Use `space_by_identity` when a few Hermes identities map to named lanes. Use `space_template` when Hermes already has a stable identity and you want one lane per identity.
+Existing `space_by_identity`, `space_template`, `NMEM_SPACE` and legacy `NMEM_SPACE_ID` resolution are retained. Leave `space` out to use the existing ambient fallback; an explicit empty `space` uses the NM default. The API connection URL must be the usable NM API base, not a website login URL.
 
-If you are launching Hermes through a CLI-style wrapper with no provider config of its own, you can still set one session-wide fallback lane with:
+`system_prompt_block()` requests `/context/bundle?include_working_memory=false` and never falls back to `wm read`. Bundle contents are frozen per logical Conversation in the provider instance; a reset or new instance can obtain a fresh Bundle at the host's next actual root-prompt build. Noting may inherit the parent's already-frozen prompt under the existing cache-parity contract; it does not independently run this Provider.
+
+`prefetch()` performs normal `nmem --json m search`, including short Chinese queries. It returns only intact IDs, titles and available dates, plus a context-sufficiency reminder. It does not inject full Memory bodies, reuse stale query results, or report candidates as memories already read. Host trivial-prompt skipping and historical `api_content` replay are unchanged.
+
+## Thread capture and recovery
+
+The modern Hermes `MemoryManager` runs `sync_turn()` on its serialized background worker. This fork relies on that host contract, as the current official synchronous sync implementation does; older hosts that invoke it inline are not supported for latency guarantees. Do not register a second `post_llm_call` fallback.
+
+Interactive Secretary sessions use a **read-only** existing `secretary_session_bindings` lookup and the host's canonical History Foreground. Physical compaction continuations with the same Conversation Ref share an archive. No new Secretary identity is minted. Ordinary Hermes and standalone cron use their own Session identity. Thread IDs are namespaced `hermes-personal-<identity>` so the fork does not overwrite archives produced by the old integration.
+
+Only user/assistant prose and normalized timestamps are archived. Tool results, hidden/Noting scaffolding and recognized compaction summaries are excluded. This is **not a full tool/multimodal execution trace**. Hermes `state.db` remains authoritative and must be backed up.
+
+Acknowledged transcript fingerprints are stored under `$HERMES_HOME/nowledge-mem-personal/receipts.sqlite3`; no transcript bodies or credentials are stored there. Successful acknowledgements advance the cursor. Failures leave it unchanged; subsequent turns/session-end or resuming the conversation retry. HTTP timeout after server commit can still cause an at-least-once retry; server append deduplication is reused, and exactly-once delivery is not claimed.
+
+An edit/rewind that changes an already-archived prefix is deliberately **not silently appended or overwritten**. Sync logs a reconciliation-required failure; explicit archive reconciliation is a deployment operation, not yet implemented here. Unsupported combined summary/user carriers on non-Secretary hosts are not claimed lossless. Scope failures deny that observation rather than guess. Independent cron sync is allowed, but cron children remain excluded.
+
+## Hermes Provenance in Memory metadata
+
+Use `metadata.hermes_provenance`, not prose suffixes or NM-native Thread fields:
+
+```json
+{
+  "id": "an-explicit-retry-stable-memory-id",
+  "title": "Approved decision",
+  "content": "The actual durable knowledge, without provenance identifiers.",
+  "source": "hermes-secretary",
+  "metadata": {
+    "hermes_provenance": {
+      "version": 1,
+      "sources": [
+        {"conversation_ref": "<exact host value>", "message_uid": "<exact host value>"}
+      ]
+    }
+  }
+}
+```
+
+The values above are placeholders, not valid evidence. Use IDs returned by the host History tools. `personal_cli.py` is a shell command, not a registered Agent function:
 
 ```bash
-NMEM_SPACE="Research Agent" hermes
+# No network write; only validate and preview the payload.
+python3 "$HERMES_HOME/plugins/nowledge-mem/personal_cli.py" write --input approved-memory.json
+# After the existing Secretary approval, using Hermes' Python environment:
+python3 "$HERMES_HOME/plugins/nowledge-mem/personal_cli.py" write --input approved-memory.json \
+  --history-home "$HERMES_HOME" --apply
+# Read metadata plus an edit precondition digest:
+python3 "$HERMES_HOME/plugins/nowledge-mem/personal_cli.py" read MEMORY_ID
+# Explicit update also requires --update --expected-sha DIGEST.
 ```
 
-Plugin-mode Context Bundle reads, Working Memory fallback, searches, saves, and thread tools then stay in that lane automatically. If you do not have a real ambient lane, stay on `Default`.
+Applied writes verify all source UIDs against the indicated Secretary History Foreground, preserve unrelated metadata on updates, and read back content/metadata. A stable ID is required; creates refuse an existing ID. Failed readback reports an ambiguous write and does not automatically repeat it. PATCH preconditions are client-side stale-read detection, **not server-atomic compare-and-swap**. Only use this helper under the intended single-writer policy.
 
-Legacy `NMEM_SPACE_ID` still works, but `NMEM_SPACE` is the preferred human-facing contract when the provider config does not already choose a lane.
+`--apply` is **not** user-authentication or an approval capability. A model with unrestricted shell and NM write credentials can bypass prompts; enforce hard isolation outside this helper when needed. The helper verifies source existence, not whether the prose logically follows from the source; the main conversation remains responsible for that review.
 
-Those settings choose the ambient lane only. Shared spaces, default retrieval, and agent guidance still come from Mem's own space profile, so Hermes does not need a second memory-container model on top.
-
-## Verify
-
-Start a new Hermes session. You should see the Context Bundle, or Working Memory on older CLIs, loaded in the system prompt. Ask:
-
-> Search my memories for recent decisions.
-
-Hermes should call `nmem_search` (plugin mode) or `mcp_nowledge_mem_memory_search` (MCP mode) and return results.
-
-## Customize without editing the plugin
-
-Hermes already has two clean user-owned instruction layers.
-
-- Global personal rules: `~/.hermes/SOUL.md`
-- Repo-level rules: `HERMES.md`
-- Do not edit the installed plugin files under `~/.hermes/plugins/nowledge-mem/`
-
-Use `SOUL.md` for your own durable memory preferences and `HERMES.md` for repo-specific expectations.
-
-## Troubleshooting
-
-- **"Nowledge Mem server not reachable"**: Verify the desktop app is running. Check with `nmem status`.
-- **"nmem CLI not found"**: Install with `pip install nmem-cli`, or enable CLI in the desktop app: Settings > Developer Tools.
-- **Tools not appearing (plugin)**: Confirm `memory.provider: "nowledge-mem"` in config.yaml and plugin files exist in `~/.hermes/plugins/nowledge-mem/`. On older Hermes builds, rerun the setup command; it also places a compatibility copy under `~/.hermes/hermes-agent/plugins/memory/nowledge-mem/` when that runtime still discovers providers from the bundled memory directory. Restart Hermes after reinstalling.
-- **Tools not appearing (MCP)**: Confirm `mcp_servers.nowledge-mem` block in config.yaml. Restart Hermes.
-- **Hermes recalls but never saves**: In MCP mode, behavioral guidance may be missing from SOUL.md. In plugin mode, the guidance is built-in; check that the plugin loaded with `hermes memory status`. If sessions were missed before an update, run `nmem t sync --from hermes --apply` once from the Hermes machine to import local history.
-- **Installed file differs from community/main**: Re-run the setup command and restart Hermes. The installer overwrites stale plugin runtime files and prints the installed version plus thread endpoint so you can verify the copy Hermes will load.
-- **Tool call fails immediately at 0.0s**: Update to v0.5.6 or later. Earlier builds had two separate failure modes: v0.5.3 and below could reject Hermes list-shaped tool arguments for labels or bulk IDs, and v0.5.4 could still advertise `nmem_*` tools before Hermes had actually indexed them for dispatch.
-- **Slow responses**: Default timeout is 30 seconds. Increase in `nowledge-mem.json` for remote setups.
-
-## Update
-
-The MCP tools are defined by the Nowledge Mem server. When you update the desktop app, tool capabilities update automatically. For plugin updates, re-run the setup command.
+## Tests and boundaries
 
 ```bash
-bash <(curl -sL https://raw.githubusercontent.com/nowledge-co/community/main/nowledge-mem-hermes/setup.sh)
+python3 -m unittest discover -s nowledge-mem-hermes/personal_tests -v
 ```
 
-After updating, the script prints the version and endpoint from the files it actually wrote:
+These tests load the retained upstream Provider/client helpers with a minimal Hermes ABC fixture, and use fake NM clients plus a disposable local HTTP server. They do not access a real profile or NM account. The upstream suite targets the old policy and is retained for reference; the new policy is tested separately. See [docs/TEST_REPORT.md](docs/TEST_REPORT.md) for actual execution evidence and remaining live acceptance.
 
-```text
-Installed version: 0.5.24
-Thread import endpoint: /threads/import
-```
-
-If those lines still show an old version or a different endpoint, Hermes is reading a different `HERMES_HOME`; set `HERMES_HOME` explicitly and run the setup command again.
-
-## Links
-
-- [Hermes integration guide](https://mem.nowledge.co/docs/integrations/hermes)
-- [Documentation](https://mem.nowledge.co/docs/integrations)
-- [Discord](https://nowled.ge/discord)
-- [GitHub](https://github.com/nowledge-co/community)
-
----
-
-Made with care by [Nowledge Labs](https://nowledge-labs.ai)
+The agreed `session_search` Conversation-grouping, keyword-centred collapse and exact evidence-read work belongs to **EdgarZhong/hermes-secretary**, not this plugin. This repository records the contract; it does not monkey-patch that Core tool or claim the Core redesign was delivered here.
