@@ -1,12 +1,12 @@
 # Personal Hermes / Hermes Secretary — Phase 3 Memory Integration and Cross-Conversation History Specification
 
-> **Status:** Proposed authoritative **English replacement** of the first Phase 3 draft, prepared 2026-10-14 for the user's review. It consolidates already-confirmed product decisions, inspects the actual Hermes Secretary and NM Provider source, and explicitly labels implementer-level choices. **It is not a declaration that unfinished Core work has shipped, and it does not retroactively amend frozen 02 or 06.**
+> **Status:** Proposed normative **English replacement** of the first Phase 3 draft, prepared 2026-10-14 for the user's review. It consolidates already-confirmed product decisions, inspects the actual Hermes Secretary and NM Provider source, and explicitly labels implementer-level choices. **It is not a declaration that unfinished Core work has shipped, and it does not retroactively amend frozen 02 or 06.**
 >
 > **Targets:** (A) `EdgarZhong/hermes-nmem-provider/nowledge-mem-hermes` — one personalized fork of the official NM Memory Provider; (B) `EdgarZhong/hermes-secretary` — a narrowly scoped **future** revision of native `session_search`, with no NM dependency.
 >
 > **Sources and precedence:** Explicit decisions in the 2026-10-14 Phase 3 discussion govern this phase. Inherited Secretary behavior comes from the **effective** `docs/02-noting-system-specification.md` (including accepted V1.6 amendments), then `docs/04-hermes-secretary-v1.5-implementation-spec.md` for unoverridden increments, then applicable 01. `docs/06-Hermes-Secretary-Web-UI-V1-Spec.md` governs only its expressly authorized Web UI increments; it is a reference for specification discipline, not permission to add UI navigation or a new backend service. NM official `nowledge-co/community/nowledge-mem-hermes` is an **implementation baseline**, not the product-policy authority for this fork.
 >
-> **Normative words:** **MUST / MUST NOT** define target requirements; **SHOULD** is a strong preference subject to documented equivalence. **Existing** means directly visible in the inspected repository or its executed tests. **Target** is required but not necessarily implemented. **Convergence** means a concrete engineering interpretation introduced in this rewrite; it is identified in `6 and **awaits user ratification** when it affects externally visible behavior. **Verify** means a production or host guarantee not yet established. A Target name or example MUST NOT be presented as an existing API.
+> **Normative words:** **MUST / MUST NOT** define target requirements; **SHOULD** is a strong preference subject to documented equivalence. **Existing** means directly visible in the inspected repository or its executed tests. **Target** is required but not necessarily implemented. **Convergence** means a concrete engineering interpretation introduced in this rewrite; it is identified in §6 and **awaits user ratification** when it affects externally visible behavior. **Verify** means a production or host guarantee not yet established. A Target name or example MUST NOT be presented as an existing API.
 >
 > **Repository separation:** This file is stored with the NM Provider for one reviewable Phase 3 reference. Its `session_search` section specifies work to do in the **separate Hermes Secretary Core repository**. Merely merging this document, or passing this Provider's tests, does not implement that Core change.
 
@@ -315,7 +315,7 @@ Current `HISTORY_SEARCH_GUIDANCE` already says: use `session_history` first for 
 
 ### 3.2. One tool with two layers of compatibility
 
-**Target:** preserve the **same registry/tool name** `session_search`. For eligible Secretary Main agents, advertise and handle its new **logical-Conversation projection** (`3.3–`3.13`). For existing callers that intentionally use the native physical Session shapes, preserve those callable routes and semantics to avoid breaking upstream desktop, CLI, automation and other legal runtimes.
+**Target:** preserve the **same registry/tool name** `session_search`. For eligible Secretary Main agents, advertise and handle its new **logical-Conversation projection** (§3.3–§3.13). For existing callers that intentionally use the native physical Session shapes, preserve those callable routes and semantics to avoid breaking upstream desktop, CLI, automation and other legal runtimes.
 
 The new Secretary-facing contract uses an **explicit `mode` selector**, modeled after `session_history`. The three Secretary-facing values are:
 
@@ -445,7 +445,7 @@ This is a **contract target**. Implementation may use a thin schema/dispatcher a
 }
 ~~~
 
-**Target defaults (engineering convergence, `6):** `limit=3` Conversation groups (inherited from native default/max10); `matches_per_conversation=2` (maximum5); `roles=["user","assistant"]`; `sort="relevance"`. When callers ask for `tool` or `system` roles, use the source's lawful search/index route and resource caps; the native tool-role search may take the slower LIKE path.
+**Target defaults (engineering convergence, §6):** `limit=3` Conversation groups (inherited from native default/max10); `matches_per_conversation=2` (maximum5); `roles=["user","assistant"]`; `sort="relevance"`. When callers ask for `tool` or `system` roles, use the source's lawful search/index route and resource caps; the native tool-role search may take the slower LIKE path.
 
 `query` keeps the supported native FTS5 features, such as quoted phrases, `AND`, `OR`, `NOT` and prefixes; preserve CJK/trigram/LIKE fallback semantics. This is **keyword search**, not embedding/vector similarity. `session_history` retains its distinct `match="keyword"|"regex"` selector; do not silently add regex support to `session_search` and imply FTS5 can perform that regex.
 
@@ -512,7 +512,7 @@ Budget applies to the **complete tool response**, not only content. A configurab
 
 This priority favors breadth of evidence discovery. It does **not** require retaining arbitrarily many low-quality matches. Existing FTS relevance/temporal ordering and explicit limits must still be respected. Duplicate `(conversation_ref,message_uid)` results are suppressed in the logical response, even when physical Compaction generations contain copies. Forked Conversations with inherited text may yield distinct valid **pairs**, and must not be erroneously merged.
 
-**Convergence defaults:** per returned Search message, a maximum of approximately **800 Unicode characters** including omission separators (consistent with the magnitude of `session_history` Search); response-wide maximum approximately **12,000 characters** for the Secretary projection. These are **initial engineering defaults for acceptance**, not previously user-frozen threshold values; see `6. Resource caps may be tuned from test evidence without changing Search-vs-Read semantics.
+**Convergence defaults:** per returned Search message, a maximum of approximately **800 Unicode characters** including omission separators (consistent with the magnitude of `session_history` Search); response-wide maximum approximately **12,000 characters** for the Secretary projection. These are **initial engineering defaults for acceptance**, not previously user-frozen threshold values; see §6. Resource caps may be tuned from test evidence without changing Search-vs-Read semantics.
 
 No Search argument named `full`, `force_full` or `detail="full"` may bypass excerpt limits on the Secretary-facing projection. Native callers using the old `detail` field continue on the **separate legacy compatibility path**; they are not an excuse to return unrestricted content to the new Secretary Main tool surface.
 
@@ -565,7 +565,7 @@ Return Secretary-facing grouped JSON
 **Critical invariants:**
 
 - Physical Session lineage alone is insufficient: one logical Conversation can span multiple physical Sessions, and a fork may inherit a physical message while receiving a new Conversation Ref.
-- A physical Session **without a proven Secretary `conversation_ref`** cannot be emitted as a logical Conversation group. This may include standalone Cron history in a host where those Sessions have no Secretary bindings. Such sessions remain accessible through the retained native legacy physical-Session interface to callers entitled to that interface; the new Secretary projection MUST NOT forge synthetic `conversation_ref` values or silently disguise physical Session IDs as them. This coverage boundary is an explicitly labeled engineering convergence (`6), not a claim that the user separately approved excluding Cron search history.
+- A physical Session **without a proven Secretary `conversation_ref`** cannot be emitted as a logical Conversation group. This may include standalone Cron history in a host where those Sessions have no Secretary bindings. Such sessions remain accessible through the retained native legacy physical-Session interface to callers entitled to that interface; the new Secretary projection MUST NOT forge synthetic `conversation_ref` values or silently disguise physical Session IDs as them. This coverage boundary is an explicitly labeled engineering convergence (§6), not a claim that the user separately approved excluding Cron search history.
 - `messages.id` is a physical SQLite locator. It may guide internal FTS joins but MUST NOT be shown to the Secretary Main model as canonical provenance.
 - A copied `message_uid` can occur on another logical branch. Only the **pair** identifies the evidence.
 - `active=0, compacted=1` authentic archived messages remain eligible when still on the valid path; `active=0, compacted=0` superseded/rewound rows must be excluded.
@@ -982,7 +982,7 @@ This is a **specification rewrite and clarification**, not a blanket approval to
 
 **Current Hermes Secretary Core:**
 
-- `docs/02-noting-system-specification.md` — especially `2.2–2.4 and `5.12` for History Foreground, `session_history` schema/prompt, provenance, Compaction/Noting.
+- `docs/02-noting-system-specification.md` — especially §§2.2–2.4 and 5.12 for History Foreground, `session_history` schema/prompt, provenance, Compaction/Noting.
 - `docs/06-Hermes-Secretary-Web-UI-V1-Spec.md` — architectural authority/non-regression and no invented UI backend/API.
 - `tools/session_history_tool.py` — unchanged current-Conversation Search/Read, actual ~800-character Search behavior.
 - `tools/session_search_tool.py` — **existing legacy physical Session** discovery/read/scroll/browse and full schema.
