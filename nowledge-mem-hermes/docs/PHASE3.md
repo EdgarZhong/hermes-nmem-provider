@@ -701,79 +701,83 @@ Keyword syntax reuses supported FTS5 features (`AND`, `OR`, `NOT`, quoted phrase
 
 **Dates:** For Conversation, do **not** use `secretary_conversations.created_at` as a substitute for original Conversation birth if it was only registry-insert time; use a proven owner Session origin or `null`. For `last_update_at`, use the last effective authentic human interaction, not a Noting/background timer or a tool-only row. For Session, use the corresponding physical `sessions.started_at` / bounded last-activity derivation; if not provable, use `null`. Format all exposed instants consistently with explicit timezone; do not invent a status label like `last_update_at` for a Cron Session and thereby imply user dialogue.
 
-### 3.6. Search result selection: coverage before verbosity
+### 3.6. Combined bounded result selection: breadth before verbosity
 
-Budget applies to the **complete tool response**, not only content. A configurable/default bounded response prevents dozens of long excerpts from consuming a model's entire remaining context.
+The response-wide text limit applies to the **entire** `session_search` tool JSON, including both `conversations[]` and `sessions[]`, metadata and all content. Never budget only the first array.
 
-**Target precedence under budget pressure:**
+Required priority under a **model output-size** budget:
 
-1. Shorten individual **matched-message `content` excerpts**, centered on matches, without truncating identity, timestamp, title, role or provenance fields.
-2. Remove redundant low-value hits **within a Conversation** if still necessary, keeping distinct spans and time coverage when possible.
-3. Only after those reductions, remove lower-ranked **Conversation groups**, ensuring remaining groups have complete identifiers and usable source context.
+1. Shorten individual authenticated match-centered `content` excerpts, without truncating either kind's identity locator, title, timestamp, role or classification.
+2. Remove low-value duplicate Message hits **within the same source group**, while retaining distinct useful positive query spans when possible.
+3. Only then remove lower-priority **result groups** within the combined `limit`. For `scope="all"`, authenticated user Conversations have presentation priority and legitimate Sessions — especially repetitive Cron — are the fallback groups. For explicit `scope="sessions"`, do not let unseen user Conversations consume the result budget.
 
-This priority favors breadth of evidence discovery. It does **not** require retaining arbitrarily many low-quality matches. Existing FTS relevance/temporal ordering and explicit limits must still be respected. Duplicate `(conversation_ref,message_uid)` results are suppressed in the logical response, even when physical Compaction generations contain copies. Forked Conversations with inherited text may yield distinct valid **pairs**, and must not be erroneously merged.
+A `kind=conversation` group is deduplicated by its genuine `conversation_ref` and each message by `(conversation_ref,message_uid)`, even through Compaction continuations. Different forked Conversations may contain the same `message_uid` but are not the same result source. A `kind=session` group is keyed by its **actual owning physical `session_id`**; messages are uniquely located by physical `message_id` and MUST NOT be merged into a fake Conversation or a guessed user Main lineage.
 
-**Convergence defaults:** per returned Search message, a maximum of approximately **800 Unicode characters** including omission separators (consistent with the magnitude of `session_history` Search); response-wide maximum approximately **12,000 characters** for the Secretary projection. These are **initial engineering defaults for acceptance**, not previously user-frozen threshold values; see §6. Resource caps may be tuned from test evidence without changing Search-vs-Read semantics.
+**Initial engineering budgets:** around 800 Unicode characters maximum per Search excerpt and around 12,000 characters for the combined response. The configured `limit` applies across both kinds and defaults to 3 groups (max 10); `matches_per_group` defaults to 2 per group (max 5). When either candidate scanning, index health or response trimming materially prevents exhaustive results, set `partial=true` and include a grounded reason. These initial numbers may be revised with measured test evidence without changing the identity contract.
 
-No Search argument named `full`, `force_full` or `detail="full"` may bypass excerpt limits. The old native `detail` switch is not part of the canonical Secretary Schema, even when Noting is off. Do not retain it as a disguised native fallback that returns unrestricted physical-Session content.
+No Search option `full`, `force_full` or native `detail="full"` may bypass bounded Search excerpts. Exact original data is recovered only through **the same tool's `mode="read"` with the correct kind of locator** (§3.10–3.11).
 
-### 3.7. Match-centered content collapse (NOT head/tail cropping)
+### 3.7. Original match-centered excerpt collapse (both kinds, no LLM rewrite)
 
-**Target:** The `content` field in Search is a deterministic excerpt of **authentic original text** selected around **positive query matches**. It is not an LLM summary. A query hit located in the middle of a long Message MUST NOT disappear because only the first 800 characters were returned.
+**Target:** Search `content` is a deterministic subset of the **authentic stored original message**, around actual **positive query matches**. This is true for Conversation hits **and** Session hits; a match deep in a 10,000-character Cron report must not disappear because only the first 800 characters were kept. Search never generates an LLM summary or silently copies an unrelated head/tail excerpt.
 
-Rules:
+Algorithm:
 
-1. Obtain ranked physical candidate hits from the existing native index. Do not scan the entire database in Python just to find snippets.
-2. Confirm each candidate's logical Conversation/Message Identity and effective History path **before treating it as evidence**.
-3. For a short original Message, return the whole original `content`; no omission markers; no `truncated=true`.
-4. For longer Messages, determine **actual matching spans** in the authenticated source body using tokenizer/search-route-grounded terms. Respect phrases, Unicode/CJK matching and positive operands; `NOT` terms are excluded rather than highlighted.
-5. Expand each relevant span by bounded surrounding source characters, preferably respecting words/sentences at a boundary when that does not inflate the budget. It is **not** a fixed head/tail slice.
-6. Merge touching/overlapping windows into continuous original text. If important hits are separated, emit several authentic windows in source order, separated by `…`. If the beginning or end is omitted, mark the omission with `…` at the respective edge.
-7. If there are too many windows, prioritize (a) diverse positive query-term/phrase coverage, then (b) best-ranked/most informative actual occurrences, rather than the earliest occurrences by default.
-8. Reserve room for required metadata and the separator characters before selecting windows. Never cut an ID or distort Message metadata merely to satisfy the content budget.
-9. `truncated:true` MUST be present whenever part of the original message body was omitted; the resulting joined excerpts MUST NOT be represented as one continuous quote.
-10. Do not insert LLM-generated connective language, invented quotations or silently transformed source text.
+1. Obtain bounded native FTS5/CJK/LIKE candidates with their real owning physical Session, source, role and hit IDs. Apply source-kind, profile and visibility admission before treating a hit as evidence (§3.8).
+2. For `kind=conversation`, hydrate only the **authorized effective History Foreground** of the correct `conversation_ref` and validate the actual `message_uid` and active fork/rewind path. For `kind=session`, hydrate the actual owning physical `session_id` and message row ID from native `messages`; honor the native hidden-source, role and inactive/rewound guards. Do not use a pretend Conversation Ref.
+3. If the original is short enough, return it whole with no omission marker and `truncated=false` or omitted.
+4. If longer, derive true matching spans in **the original source text** from positive terms/phrases of the effective native FTS/LIKE route, excluding `NOT` operands. Handle Unicode/CJK and verified phrase matching; do not turn the index's artificial `>>> <<<` highlight syntax into purported user text.
+5. Expand useful spans by bounded surrounding characters, merging overlapping/touching windows. Separate distant source windows by `…`, preserving source order. Mark omitted prefix/suffix with an ellipsis.
+6. Favor positive query-term coverage and distinct actual hits over multiple nearly identical snippets. Enforce per-match and response budgets **after** accounting for all required identity/metadata fields.
+7. Emit `truncated:true` whenever any original body portion was omitted. Never present concatenated distant spans as a single continuous quotation.
+8. If the query route does not yield a trustworthy actual positive source span, retain a valid row locator with a truthful no-trusted-excerpt diagnostic and omit manufactured content. Do not silently replace an intended match-centered excerpt with the original first/last characters.
 
-**FTS-specific fact:** Existing `SessionDB.search_messages()` already produces `snippet(messages_fts,...,40)` with query-centered context; the LIKE fallback also extracts around a match position. Reuse this as the initial ranking/snippet hint. But an FTS `snippet` is **not** automatically a complete multi-window raw-source extraction, and its `>>>`/`<<<` markers are rendering aids, not original user content. Verify raw substrings against the canonical source if constructing final `content`. Where the search route cannot unambiguously locate a positive match span, retain the **valid Message Identity** and report that no trusted excerpt could be produced; do **not** quietly return the body head/tail or fabricate highlight positions.
+**Native engine facts:** The standard `messages_fts` index includes Cron. Trigram/CJK substring indexes intentionally exclude Cron, delegate and tool noise (§0.7); explicit `scope="sessions"` targeting Cron may need native filtered LIKE fallback to recover short/CJK matches, subject to a bounded query plan. Existing FTS `snippet()` provides useful initial context but is **not proof of complete multi-window original-source extraction**.
 
-Example of a valid shortened result:
+Example for either kind:
 
 ~~~text
-…We agreed NM Server should own the governance policies, not each Harness…
-…Secretary Main will assist in the interim, with the existing provenance and approval gate…
+…The nightly report identified the relevant policy change…
+…The follow-up job recorded the final status and timestamp…
 ~~~
 
-Both portions are original source spans; their connecting ellipsis explicitly denotes omitted text. The full original message remains available by the **same tool's precise Read mode** below.
+The two portions must be actual original substrings. The full original Session message can be retrieved by `session_message_locator`; a Conversation source uses canonical `message_identity`.
 
-### 3.8. Search's actual identity resolution and FTS plan
+### 3.8. Source classification, native FTS candidates, and two explicit fallback projections
 
-The native FTS engine searches physical `messages` rows; Secretary owns the logical Conversation. The implementation plan MUST preserve that separation:
+**The key design rule:** `Conversation` is a certified Secretary **user-facing Main** provenance owner. `Session` is a natively visible non-user execution scope. Do not infer user participation from the presence of a `role="user"` message or from a `secretary_session_bindings` row: both may exist for a Cron execution.
+
+**Single native query/registry tool, two **source projections**:**
 
 ~~~text
-Native FTS5 / CJK / LIKE candidate retrieval
-        ↓ bounded physical row IDs + ranking + snippet hints
-Authorized profile's Secretary session bindings
-        ↓ expand owning and proven frozen-branch references
-Validate current effective History Foreground paths
-        ↓ drop rewound/edit-superseded, hidden/scaffolded, wrong-owner rows
-Deduplicate by (conversation_ref, message_uid)
-        ↓ group by conversation_ref, rank groups
-Fetch proven title / created_at / last_update_at for surviving groups
-        ↓ match-centered original excerpts with response budget
-Return Secretary-facing grouped JSON
+Existing Hermes session_search registry/toolset/readiness selection
+        ↓ native FTS5/CJK/LIKE candidates and bounded physical Session metadata
+Existing native hidden-source + active-row + profile/runtime guards
+        ↓ exclude unauthorized tool/subagent/kanban/other hidden contexts
+Verify actual runtime/source/ownership classification of each candidate
+        ├─ genuine user Main source with certified Secretary path
+        │     → Conversation: validate against History Foreground,
+        │       group by conversation_ref, emit message_uid
+        └─ genuinely non-user source permitted by original native Search rules
+              → Session: retain actual owning session_id,
+                group by physical Session, emit original message_id
+        ↓ merge ranked eligible groups, demote Cron in broad queries
+        ↓ apply combined group+excerpt budgets and split into
+          conversations[] and sessions[] with kind labels
 ~~~
 
-**Critical invariants:**
+**Classification rules:**
 
-- Physical Session lineage alone is insufficient: one logical Conversation can span multiple physical Sessions, and a fork may inherit a physical message while receiving a new Conversation Ref.
-- A physical Session **without a proven Secretary `conversation_ref`** cannot be emitted as a logical Conversation group. This may include standalone Cron history when such Sessions have no Secretary bindings. The canonical Secretary search MUST NOT invent `conversation_ref` values, disguise physical Session IDs as them, or rely on a Noting-off native physical-Session fallback to make the result appear. How to present otherwise-lawful unbound Cron history without weakening provenance is a **separate open coverage question** (§6, C20), not proof that the user approved excluding that history.
-- `messages.id` is a physical SQLite locator. It may guide internal FTS joins but MUST NOT be shown to the Secretary Main model as canonical provenance.
-- A copied `message_uid` can occur on another logical branch. Only the **pair** identifies the evidence.
-- `active=0, compacted=1` authentic archived messages remain eligible when still on the valid path; `active=0, compacted=0` superseded/rewound rows must be excluded.
-- Compaction scaffolding, summarized control messages, inherited branch exclusions and duplicate physical carrier projections must follow effective `get_history_foreground_conn`, not ad-hoc `session_id` assumptions.
-- The existing `secretary_branch_messages` / `secretary_session_bindings` can support reverse ownership lookups; reuse their supported indices and path semantics rather than inventing a new identity database.
+1. To classify a group as `kind="conversation"`, establish a **genuine user-facing Main Conversation** from authoritative Hermes Session source/origin, confirmed eligibility and effective Secretary ownership. Require a valid `conversation_ref`, proper Compaction continuation and valid branch/rewind path. A stored `conversation_ref` on a non-user Cron or utility Session is **not sufficient** to enter that group.
+2. To classify as `kind="session"`, require a **non-user execution Session** with an actual physical `session_id`, native-search-visible `source`, lawful same-profile scope, and eligible original message rows. Known `source="cron"` qualifies; existing native `_HIDDEN_SESSION_SOURCES=("kanban","subagent","tool")` remain hidden in Search/Browse. Other runtime sources are considered only according to the actually existing native visibility policy, not an invented blanket “all background Agents” allowance. Preserve delegate/child origin checks wherever the runtime distinguishes them reliably.
+3. A physical row that is a genuine Main conversation but has **missing, conflicting or broken** canonical Conversation identity MUST NOT silently appear as a fallback Session. Report `partial=true` / `identity_unresolved` or a clear source error; never disguise broken human-Conversation provenance as an unattended Session.
+4. `scope="conversations"` can exclude Session candidates early; `scope="sessions"` MUST search the native-allowed Session source classes without consuming the initial candidate cap on user Conversations. Push supported `source_filter`/exclusions into bounded SQLite candidate queries. The exact allowed unattended-source set is an implementation audit item.
+5. `scope="all"` considers both kinds from the same underlying native indexed corpus, prioritizes certified user Conversations, and includes eligible Session results when room remains. Cron stays demoted just as in native Hermes; none are required to have a user `conversation_ref`. This is not `session_search` calling itself a second time with another API.
+6. Physical `messages.id` may be a Session result `message_id` or an internal FTS locator; it MUST NOT be relabeled a `message_uid`, used as a personal Memory Provenance ID, or published in a Conversation result. For Session fallback, every matched row's `message_id` must be verifiably owned by its displayed `session_id`.
+7. For legitimate Conversation fork/Compaction, use Secretary `get_history_foreground_conn` semantics, including copied `message_uid` across distinct branches and authentic `active=0,compacted=1` archived history. Exclude rewind/edit-superseded `active=0,compacted=0`. For physical Session rows, use native filters and source-local chronology without inventing a logical multi-Session Conversation. If a Cron run rotates after Compaction, preserve the true owning physical `session_id` of each returned hit; do not fabricate a single source ID for multiple generations.
+8. Profile authorization and native tool access remain separate from the identity projection. No cross-profile scan is implied by `scope="all"` and the exact Session fallback Read MUST not bypass source exclusions.
 
-**Performance:** Over-fetch bounded FTS candidate rows (native currently uses up to 300) and validate only the plausible surviving Conversation owners. Do **not** eagerly materialize every History Foreground in the database, or run an unbounded cross-Conversation regex scan. Batch membership checks and metadata reads where practical. If candidate or time budgets terminate early, return `partial=true` and a truthful diagnostic; do not report “no matching Conversations exist” unless the queried scope was actually exhausted.
+**Performance/recall:** Native Search currently scans up to 300 physical candidate rows before limited result projection; retain bounded overfetch and batch verification, not a Python full-database History walk. `scope="sessions"` is a targeted explicit mode and must not starve Cron under a limit filled by interactive rows. For CJK queries against Cron's non-trigram corpus, use the native source-constrained FTS/LIKE route with deadlines, and set `partial=true` if search is incomplete. Do not claim a missing Cron term after searching only an index that deliberately excludes Cron.
 
 ### 3.9. Browse — metadata only
 
