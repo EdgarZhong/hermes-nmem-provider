@@ -188,6 +188,7 @@ NM candidates (references only; use CLI to read):
 - Recognize short Chinese queries. Do not impose the upstream plugin's previous `len(query) < 10` filter.
 - Keep retrieval failure nonfatal. Differentiate `not found`, `not executed` and `not available`; an empty candidate list proves neither the absence of relevant NM Memories nor completion of all possible searches.
 - The native Hermes `is_trivial_prompt()` gate may skip `prefetch()` entirely. The plugin alone cannot force a call the host did not issue. **Do not claim every possible message, including image-only or host-trivial inputs, was checked.**
+- **Existing host persistence caveat:** Hermes may stamp the prefetched text into the User Turn's `api_content` and replay it in later provider requests. Thus “per-turn candidate retrieval” does **not** mean the previously injected bytes disappear automatically after one Turn. Keep the content small, preserve the canonical original user text, measure accumulated prompt cost through real Compaction cycles, and do not imply a one-turn-only deletion guarantee without a separately authorized Core change.
 
 **Existing indexed output (illustrative, fake IDs and dates):**
 
@@ -495,7 +496,7 @@ Required group fields: `conversation_ref` (full), `title` (string or `null`), `c
 
 Required matched row fields: `message_uid` (complete), `timestamp` (real entry time), `role`, `content` (original excerpt), optional `truncated:true`. `truncated` is omitted or false if the original entire body is actually present. No model-facing physical `message_id`, `session_id`, duplicate `message_identity` object, `parent_session_id`, `link` or `@session` UI navigation string.
 
-**Time/metadata sources:** `secretary_conversations.created_at` is an **identity-registration timestamp**, potentially later than the actual legacy Conversation. It MUST NOT be relabeled as the original Conversation creation time. Prefer the earliest proven effective owning Session start for `created_at`; if unknown, `null`. Use the latest authentic effective History message timestamp for `last_update_at`, **not** a background timer, Noting write, registry update, FTS rebuild, or arbitrary `sessions.last_activity_at`. Use a native actual title from a proven owning Session/continuation; do not summarize messages to synthesize a title.
+**Time/metadata sources:** `secretary_conversations.created_at` is an **identity-registration timestamp**, potentially later than the actual legacy Conversation. It MUST NOT be relabeled as the original Conversation creation time. Prefer the earliest proven effective owning Session start for `created_at`; if unknown, `null`. Use the latest authentic effective **User/Assistant interaction message** timestamp for `last_update_at`, **not** a tool-only or background timer, Noting write, registry update, FTS rebuild, or arbitrary `sessions.last_activity_at`. A genuinely new fork's `created_at` is the branch Conversation's own proven start, not the oldest original message copied from its parent. Use a native actual title from a proven owning Session/continuation; do not summarize messages to synthesize a title.
 
 **Time representation:** Use a consistent timezone-aware timestamp format for the new Secretary projection; preserve exact underlying source instants and respect the profile's configured timezone on presentation. The legacy native format and frozen `session_history` output remain unchanged.
 
@@ -616,8 +617,8 @@ The current native `list_recent_sessions_bounded` avoids expensive whole-databas
     "conversation_ref": "conv_a1b2c3d4e5f678901234567890abcdef",
     "message_uid": "f09c8e21e7f64b9da325ee88659c26ab"
   },
-  "context_before": 2,
-  "context_after": 2,
+  "context_before": 0,
+  "context_after": 0,
   "roles": ["user", "assistant"]
 }
 ~~~
@@ -653,7 +654,7 @@ Response shape:
 }
 ~~~
 
-This response shows a no-neighbor example; a request with permitted neighbors returns them in the same ordered `messages` array, each with its own UID and full body. `anchor_message_uid` identifies the requested row once; the normal message row still carries its UID for provenance and consistency.
+This request and response intentionally show **zero neighbors** so the exact original anchor is unambiguous. To fetch two neighbors each way, use the identical `mode="read"` and `message_identity` with `context_before=2` and `context_after=2`; all eligible neighboring rows appear in the same ordered `messages` array with their own UIDs and full bodies. `anchor_message_uid` identifies the requested row once; the normal message row still carries its UID for provenance and consistency.
 
 **Comparison with another existing method:** `session_history({"mode":"read","message_identity":...})` can read the same Message **only if that identity belongs to its bound current Conversation**. Phase 3 `session_search({"mode":"read",...})` is the cross-Conversation route. They share source truth but not the caller's scope.
 
@@ -944,7 +945,7 @@ Updating this design file does **not** install the plugin on a real Hermes home,
 | C06 | Precise Read's neighborhood/oversize undefined | Default no neighbors; optional `context_before/context_after`; full original on ordinary Read, explicit oversized error plus optional same-tool chunk fallback | Avoids silent truncation and preserves evidence recoverability. |
 | C07 | `after/before` conflict with previous session-search semantics | New `start_time/end_time` filter actual Message timestamps; legacy `after/before` retains Session-start meaning | Avoids silently changing native API semantics. |
 | C08 | Duplicate output identities/link fields | Conversation Ref once per group; Message UID once per row; **no model-facing `link`, `session_id`, `message_id`** on new projection | Minimal, correct logical provenance and no UI concern in search. |
-| C09 | Creation time vs registry insertion unspecified | Real earliest proven owning Session start, or `null`; last-update from latest effective original Message, or `null`; title from real Session title | No fabricated historical metadata or pollution from Noting timers. |
+| C09 | Creation time vs registry insertion unspecified | Real earliest proven owning Conversation Session start, or `null`; last-update from latest authentic User/Assistant interaction, or `null`; title from real Session title | No fabricated historical metadata, parent-inherited branch creation date or pollution from tool/Noting timers. |
 | C10 | Title-only match previously manufactured message preview | Group may truthfully report `match_reason="title"` with no Message hits | A title is metadata, not original message evidence. |
 | C11 | Physical FTS row ownership unclear | Validate candidates against effective Secretary History Foreground and branch inheritance **before** grouping | Avoids invalid rewind rows, copied-UID confusion and wrong-Conversation citations. |
 | C12 | Default Profile search authorization unclear | New projection stays within the current authorized profile unless a lawful explicit native profile is requested; no implicit scan | Preserves native privacy boundary. |
@@ -954,6 +955,7 @@ Updating this design file does **not** install the plugin on a real Hermes home,
 | C16 | Partial Search and impossible full read undefined | Explicit `partial`/incomplete search evidence and `content_too_large` for whole read; never report exhaustive coverage or untruncated evidence without proof | Prevents false conclusions and silent data loss. |
 | C17 | Forked archive and physical Session IDs conflated | Separate logical main `conversation_ref` archive from standalone Cron `session_id`; no guessed Thread mapping | Matches actual Secretary ownership and one-plugin policy. |
 | C18 | Scope of “implemented” was unclear | Provider code/test state explicitly separated from still-unimplemented Core Search target and live E2E Verify items | Makes assignment, review and acceptance auditable. |
+| C19 | “Per-turn” was ambiguous about model-context persistence | Existing Hermes `api_content` may replay older candidate blocks; narrow, bounded index/Reminder is the current mitigation, not a one-turn-only deletion guarantee | Prevents hidden token-cost and prompt-cache assumptions; an ephemeral-only transport would be a separately authorized Core change. |
 
 ### 6.3. Concrete integration blockers that must be verified, not silently “solved”
 
