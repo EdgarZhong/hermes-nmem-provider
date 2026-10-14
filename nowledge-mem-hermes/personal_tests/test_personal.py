@@ -1,4 +1,4 @@
-"""Provider policy contract against the retained upstream modules; no real NM writes."""
+"""Provider policy contract against retained upstream helpers; no real NM writes."""
 import copy
 import importlib
 import json
@@ -7,16 +7,20 @@ import sys
 import tempfile
 import types
 import unittest
+from contextlib import closing
 from pathlib import Path
 from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
-# Only the Hermes host ABC is stubbed. client.py/provider.py/skill_outcome.py are real upstream files.
+# Host ABC and egress handoff are fixtures; retained upstream modules are real.
 if 'agent.memory_provider' not in sys.modules:
     agent = types.ModuleType('agent'); agent.__path__ = []
     abc = types.ModuleType('agent.memory_provider')
     abc.MemoryProvider = type('MemoryProvider', (), {})
     sys.modules.update({'agent': agent, 'agent.memory_provider': abc})
+egress = types.ModuleType('agent.memory_manager')
+egress._redact_for_provider = lambda rows: copy.deepcopy(rows)
+sys.modules.setdefault('agent.memory_manager', egress)
 package = types.ModuleType('_nm_policy_test'); package.__path__ = [str(ROOT)]
 sys.modules[package.__name__] = package
 P = importlib.import_module('_nm_policy_test.personal_provider')
@@ -63,7 +67,8 @@ class ProviderTests(unittest.TestCase):
         p.initialize(session, hermes_home=self.home, **({'platform': 'cli', 'agent_context': 'primary'} | runtime))
         return p
     def db(self, rows, bindings=()):
-        with sqlite3.connect(Path(self.home)/'state.db') as db:
+        # Connection's context manager commits/rolls back but does not close it.
+        with closing(sqlite3.connect(Path(self.home)/'state.db')) as db, db:
             db.execute('CREATE TABLE sessions (id TEXT PRIMARY KEY, source TEXT, model_config TEXT, parent_session_id TEXT, title TEXT)')
             db.executemany('INSERT INTO sessions VALUES (?,?,?,?,?)', rows)
             db.execute('CREATE TABLE secretary_session_bindings (session_id TEXT PRIMARY KEY, conversation_ref TEXT)')
@@ -170,9 +175,8 @@ class ProviderTests(unittest.TestCase):
         self.assertEqual(p._scope().conversation_ref,'conv_branch')
     def test_compaction_uses_same_thread_and_canonical_history(self):
         self.db([('s1','cli','{}',None,'main'),('s2','cli','{}','s1','main')], [('s1','conv_root'),('s2','conv_root')])
-        redact=types.ModuleType('agent.redact'); redact.redact_for_egress=lambda text:text.replace('SECRET','[redacted]')
         p=self.provider()
-        with patch.dict(sys.modules,{'agent.redact':redact}), patch.object(P,'history_rows',return_value=transcript()) as history:
+        with patch.object(P,'history_rows',return_value=transcript()) as history:
             p.sync_turn('u','a',messages=[{'role':'user','content':'lossy summary'}])
             p.on_session_switch('s2')
             history.return_value=transcript(2)
