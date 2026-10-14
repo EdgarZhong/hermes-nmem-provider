@@ -771,42 +771,45 @@ Example for either kind:
 
 The two portions must be actual original substrings. The full original Session message can be retrieved by `session_message_locator`; a Conversation source uses canonical `message_identity`.
 
-### 3.8. Source classification, native FTS candidates, and two explicit fallback projections
+### 3.8. Reuse the native candidate engine, then project Conversation versus Session identity
 
-**The key design rule:** `Conversation` is a certified Secretary **user-facing Main** provenance owner. `Session` is a natively visible non-user execution scope. Do not infer user participation from the presence of a `role="user"` message or from a `secretary_session_bindings` row: both may exist for a Cron execution.
-
-**Single native query/registry tool, two **source projections**:**
+**Core algorithm rule:** Secretary does **not** replace the native `_discover` / `SessionDB.search_messages` retrieval or the native `_list_recent_sessions` browse. A thin source-projection layer runs on **the same eligible physical candidates and native order**. Only a candidate proven to belong to a genuine user Main receives `conversation_ref` / `message_uid` presentation; native-visible non-user candidates remain Sessions.
 
 ~~~text
-Existing Hermes session_search registry/toolset/readiness selection
-        ↓ native FTS5/CJK/LIKE candidates and bounded physical Session metadata
-Existing native hidden-source + active-row + profile/runtime guards
-        ↓ exclude unauthorized tool/subagent/kanban/other hidden contexts
-Verify actual runtime/source/ownership classification of each candidate
-        ├─ genuine user Main source with certified Secretary path
-        │     → Conversation: validate against History Foreground,
-        │       group by conversation_ref, emit message_uid
-        └─ genuinely non-user source permitted by original native Search rules
-              → Session: retain actual owning session_id,
-                group by physical Session, emit original message_id
-        ↓ merge ranked eligible groups, demote Cron in broad queries
-        ↓ apply combined group+excerpt budgets and split into
-          conversations[] and sessions[] with kind labels
+Original Hermes session_search toolset/check_fn/profile selection
+        ↓ unchanged native query/FTS5/CJK/LIKE/repair path
+Existing title match + source/role/hidden/inactive filters
+        ↓ unchanged current-lineage suppression / valid compaction recall
+Existing physical lineage dedup and stable Cron demotion
+        ↓ bounded candidates with real owning session_id + message row id
+Small Secretary source-type and identity projection
+        ├─ genuine user Main + certified Conversation path
+        │      → group by conversation_ref, validate original message_uid
+        │      → emit typed Conversation with compact original excerpts
+        └─ native-visible non-user Session (e.g. cron)
+               → KEEP native physical lineage dedup and selected owning
+                 session_id / physical message_id
+               → emit typed Session with compact original excerpts
+        ↓ preserve native group ranking (explicit scope is an optional filter)
+        ↓ bounded combined result; separate labeled arrays
 ~~~
 
-**Classification rules:**
+**Mandatory native algorithm/visibility preservation:**
 
-1. To classify a group as `kind="conversation"`, establish a **genuine user-facing Main Conversation** from authoritative Hermes Session source/origin, confirmed eligibility and effective Secretary ownership. Require a valid `conversation_ref`, proper Compaction continuation and valid branch/rewind path. A stored `conversation_ref` on a non-user Cron or utility Session is **not sufficient** to enter that group.
-2. To classify as `kind="session"`, require a **non-user execution Session** with an actual physical `session_id`, native-search-visible `source`, lawful same-profile scope, and eligible original message rows. Known `source="cron"` qualifies; existing native `_HIDDEN_SESSION_SOURCES=("kanban","subagent","tool")` remain hidden in Search/Browse. Other runtime sources are considered only according to the actually existing native visibility policy, not an invented blanket “all background Agents” allowance. Preserve delegate/child origin checks wherever the runtime distinguishes them reliably.
-3. A physical row that is a genuine Main conversation but has **missing, conflicting or broken** canonical Conversation identity MUST NOT silently appear as a fallback Session. Report `partial=true` / `identity_unresolved` or a clear source error; never disguise broken human-Conversation provenance as an unattended Session.
-4. `scope="conversations"` can exclude Session candidates early; `scope="sessions"` MUST search the native-allowed Session source classes without consuming the initial candidate cap on user Conversations. Push supported `source_filter`/exclusions into bounded SQLite candidate queries. The exact allowed unattended-source set is an implementation audit item.
-5. `scope="all"` considers both kinds from the same underlying native indexed corpus, prioritizes certified user Conversations, and includes eligible Session results when room remains. Cron stays demoted just as in native Hermes; none are required to have a user `conversation_ref`. This is not `session_search` calling itself a second time with another API.
-6. Physical `messages.id` may be a Session result `message_id` or an internal FTS locator; it MUST NOT be relabeled a `message_uid`, used as a personal Memory Provenance ID, or published in a Conversation result. For Session fallback, every matched row's `message_id` must be verifiably owned by its displayed `session_id`.
-7. For legitimate Conversation fork/Compaction, use Secretary `get_history_foreground_conn` semantics, including copied `message_uid` across distinct branches and authentic `active=0,compacted=1` archived history. Exclude rewind/edit-superseded `active=0,compacted=0`. For physical Session rows, use native filters and source-local chronology without inventing a logical multi-Session Conversation. If a Cron run rotates after Compaction, preserve the true owning physical `session_id` of each returned hit; do not fabricate a single source ID for multiple generations.
-8. Profile authorization and native tool access remain separate from the identity projection. No cross-profile scan is implied by `scope="all"` and the exact Session fallback Read MUST not bypass source exclusions.
+1. **Same query engine:** Reuse `hermes_state_search.py::search_messages` and its actual `_search_messages_impl`, `_search_cjk`, FTS5/LIKE routes, stale/repair and deferred-rebuild behavior. `query` sanitization, FTS operators, role/source filters, in-place-compacted row handling and index-side bounded selection remain authoritative. Do NOT build a new index, vector search, new task worker, Python full database scan or second comprehensive ranking pipeline.
+2. **Same title discovery:** Retain the native `_title_match_result` eligibility and its exclusion/time/current-lineage behavior. A title-only hit is **metadata evidence**, never a fabricated original matching Message. Transform the surviving result to the appropriate typed group.
+3. **Same source visibility for Discovery and Browse:** The inspected native `_HIDDEN_SESSION_SOURCES=("kanban","subagent","tool")` are hidden from these two operations; `source="cron"` stays searchable and is demoted using native `_DEMOTED_SESSION_SOURCES=("cron",)`. Do not add extra source exclusions merely because a Session is not a user Conversation. Do not assume every other source is necessarily a user Main.
+4. **Same physical lineage logic for Sessions:** Native `_discover` resolves `_resolve_lineage`, checks whether earlier content left the current active context, and deduplicates physical candidates by **lineage root**, not simply `session_id`. Preserve this behavior **for the Session projection**. The model-facing `sessions[].session_id` is the **real owning physical ID of the selected winning hit** (as native returned it), not a generated Conversation Ref or an invented lineage key. Include only match rows provably owned by this selected Session in that result group. A physical descendant may be chosen as the winner under the existing native dedup; do not combine unrelated Session messages or create artificial new Session groups for every physical candidate row.
+5. **Secretary-specific identity enrichment only for eligible genuine user Main:** After native candidate eligibility, prove user Main ownership through actual saved source/origin and Secretary binding/path checks; then group surviving candidates by `conversation_ref`, dedupe by (`conversation_ref`,`message_uid`), validate membership via existing `get_history_foreground_conn`, and use the original Message text/role/timestamp. Valid Compaction paths and explicit branches follow Secretary's existing Foreground rules; rewound rows and unrelated roots never become evidence. A registered `conversation_ref` alone does not qualify a Cron or auxiliary Session.
+6. **Missing human identity is not Session fallback:** If a known genuine user Main is found but canonical identity cannot be confirmed, mark it `identity_unresolved` / `partial` or return an error; do not disguise it as an unattended Session. Conversely a Cron `role=user` scheduler prompt does not become a human Conversation.
+7. **Rank preservation:** The native candidate relevance order and only its existing Cron demotion decide the broad `scope="all"` order. Do **not** add a new rule ranking *every* Conversation above *every* non-Cron Session. Each displayed group may carry a `result_rank` number inherited from the surviving native group order so that separating `conversations[]` and `sessions[]` does not silently lose mixed ordering. The combined `limit` counts the earliest eligible groups in that native order after permitted Conversation folding, not all Sessions as a last resort only when no Conversations match.
+8. **Scope selector is result targeting, not a new retriever:** `scope="conversations"` filters the native-eligible candidate set to proven Main Conversations; `scope="sessions"` filters to native-visible non-user Session groups. When explicit Session targeting would be starved by a native bounded scan filled with Main hits, first use the existing `source_filter`/`exclude_sources` or similar **existing bounded query knobs**. Only a demonstrated, measured need may justify narrowly changing source-filter plumbing in `hermes_state_search.py`. The native query syntax, ranking within scope, underlying indexes, profile and hidden-source behavior remain the same. `scope` never authorizes searching a hidden source.
+9. **Separate precise Read permission from discovery visibility:** Native `session_search(session_id=...)` already permits explicit Session-id reads from the selected profile without applying `_HIDDEN_SESSION_SOURCES`. The new physical Session precise Read MUST preserve the appropriate **native direct-lookup permission**, including original profile/isolation guards, rather than importing the Discovery/Browse exclusion list as a blanket read denial. Do not turn this into an unbounded browse of hidden sessions. A valid exact `(session_id,message_id)` is still required for this new same-tool Read mode and must be checked against physical row ownership.
+10. **Operation limits:** Retain native bounded overfetch (`_DISCOVER_SCAN_LIMIT=300` as currently inspected), indexed browse + timeout, failure diagnostics, genuine title and timestamp handling, and native selected Session metadata. A new output character budget trims **presentation**, not the underlying storage, FTS index, source visibility or actual ID.
 
-**Performance/recall:** Native Search currently scans up to 300 physical candidate rows before limited result projection; retain bounded overfetch and batch verification, not a Python full-database History walk. `scope="sessions"` is a targeted explicit mode and must not starve Cron under a limit filled by interactive rows. For CJK queries against Cron's non-trigram corpus, use the native source-constrained FTS/LIKE route with deadlines, and set `partial=true` if search is incomplete. Do not claim a missing Cron term after searching only an index that deliberately excludes Cron.
+**CJK evidence:** Standard `messages_fts` contains Cron, while the expensive trigram/CJK derived indexes omit Cron/delegate noise; the native `_search_cjk` already has fallback behavior. Reuse it. The explicit `scope="sessions"` can constrain source filters through the existing API when demonstrably necessary, but MUST NOT trigger a new bespoke scanning/recall algorithm. If an index cannot cover a query, give a truthful partial result, not a fake exhaustive “no history.”
 
+**Proof required:** Run the same saved native search/browse fixtures before and after the change, normalize new results back to their physical source rows and original native dedup key, then compare candidate visibility, hit ordering, Cron demotion, title matches, same-context skip, profile limits and archived/rewound rows. Expected differences are **only** the user-Conversation merge, typed Session/Conversation envelopes, explicit scope selection, evidence excerpt formatting, and result-budget choices. Unexplained ranking/visibility differences are a regression.
 ### 3.9. Browse — metadata only
 
 Invocation:
