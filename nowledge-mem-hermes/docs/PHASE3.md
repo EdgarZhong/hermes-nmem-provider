@@ -626,9 +626,9 @@ The default max `limit=3` counts **total groups across both arrays**. The defaul
 
 **No schema drift:** the exact Schema, model-visible System Prompt, dispatcher, source-classifier and persisted tool list MUST agree at actual host request boundaries. A model instruction to read a Session must refer to the same tool's `mode="read"` with `session_message_locator`, never invent `session_read` or present the physical locator as personal evidence provenance.
 
-### 3.4. Search — source-kind selection and native-compatible ranking
+### 3.4. Search — original native retrieval, optional result-kind filter
 
-**Default Search example, both kinds:**
+**Normal mixed query example:**
 
 ~~~json
 {
@@ -642,29 +642,27 @@ The default max `limit=3` counts **total groups across both arrays**. The defaul
 }
 ~~~
 
-**Explicit unattended Session search (use for a question specifically about Cron or another native-visible task):**
+**User explicitly asks about a Cron run:**
 
 ~~~json
 {"mode":"search","scope":"sessions","query":"scheduled report","limit":5}
 ~~~
 
-**Target defaults (engineering convergence):** `scope="all"`, `limit=3` total result groups (max10), `matches_per_group=2` authentic matching Messages per group (max5), `roles=["user","assistant"]`, `sort="relevance"`.
+Initial engineering defaults: `scope="all"`; at most 3 returned groups from both types combined (max10); at most 2 authentic matching Messages per group (max5); `roles=["user","assistant"]`; `sort="relevance"`.
 
-`scope` has exactly three values:
+`scope` is **an optional filter on existing native-eligible results**, not a request to use a second algorithm:
 
-- **`all`**: return eligible **Conversation** and native-visible **Session** groups in separate, labeled arrays. Give authenticated user Conversations the primary result slots; fill remaining result slots from legitimate Session results, including Cron, without pretending they belong to a Conversation. This is a **presentation/selection fallback**, not a second API call only after a complete zero-hit failure.
-- **`conversations`**: search only eligible user Main Conversation evidence. No non-user Session group is returned even if FTS finds one.
-- **`sessions`**: search only native-visible non-user Session history. **Do not require all Conversations to have zero hits** first. This route supports explicit Cron questions, and should push eligible source filtering toward SQLite to avoid an interactive-results scan limit starving Cron.
+- `all`: reuse native source visibility, FTS/LIKE candidate order, title matching, same-context suppression, lineage dedup and existing Cron-only demotion. Do **not** introduce a separate all-Conversations-first ranking pass. Preserve the native relative order of surviving source groups; `result_rank` conveys their original mixed rank even though the DTO contains two arrays.
+- `conversations`: present only native-eligible hits subsequently **proved** to be user Main Conversations and folded onto Secretary `conversation_ref`.
+- `sessions`: present only natively visible non-user Sessions, including Cron. Do not force the entire Main corpus to be empty first. A bounded native `source_filter`/exclusion may be used solely to avoid Main candidates exhausting the source cap; not to change underlying query matching or previously hidden source visibility.
 
-The native baseline **permits Cron** and demotes `source="cron"` below interactive hits when the default broad search would otherwise return many repetitive job messages. Keep that anti-crowding policy in `scope="all"`. Inside an explicit `scope="sessions"` search, rank the authorized Session candidates using the requested relevance/time semantics without irrelevant user Conversations consuming the cap. Do not promise that the native Trigram/CJK index contains Cron: when the user explicitly targets Cron, use the source-constrained native FTS5 / bounded LIKE path as needed (§3.8).
+Keep native FTS5 keyword/phrase/boolean/prefix behavior, CJK/LIKE routing, result sort order, title-match semantics, and source-role filtering. This is **not** semantic/vector Memory Search, an LLM post-ranking stage or a new regex implementation. The separate frozen `session_history` retains its own regex/keyword selector.
 
-Keyword syntax reuses supported FTS5 features (`AND`, `OR`, `NOT`, quoted phrases, prefixes) and the existing CJK/LIKE fallback. This is **not vector/embedding search**, and no regex selector is added to `session_search`. The separate frozen `session_history` retains its existing `match="keyword"|"regex"` contract.
+`start_time` and `end_time` are **new model-facing source Message timestamp bounds** (versus original native `after`/`before` Session-start bounds). Implementing these bounds MAY require a **narrow SQL predicate extension** to existing `search_messages` only after source inspection; it MUST reuse existing search routes and limit placement and not silently relabel native time parameters. `exclude_conversation_refs` excludes only Conversation groups; `exclude_session_ids` excludes physical Session groups according to native lineage-aware exclusion semantics. No exclusion selector expands profile/source authorization.
 
-`start_time` and `end_time` constrain actual matched Message timestamps **for both kinds**, before limiting the result groups; these are not the native physical Session-start `after/before` selectors. `exclude_conversation_refs` applies only to Conversation groups; `exclude_session_ids` applies only to Session groups. Neither selector expands caller authorization. Explicit authorized `profile` resolution continues to use native isolation rules.
+### 3.5. Search — two labeled result types without changing candidate rank
 
-### 3.5. Search — exact two-kind response envelope and non-redundant groups
-
-**Normative mixed output example (fabricated test identities/timestamps; Session messages are not human dialogue):**
+**Model-facing response example (all source text/identities/timestamps are fictional):**
 
 ~~~json
 {
@@ -680,6 +678,7 @@ Keyword syntax reuses supported FTS5 features (`AND`, `OR`, `NOT`, quoted phrase
   "conversations": [
     {
       "kind": "conversation",
+      "result_rank": 1,
       "conversation_ref": "conv_a1b2c3d4e5f678901234567890abcdef",
       "title": "Secretary memory governance",
       "created_at": "2026-10-12T08:00:00+08:00",
@@ -699,6 +698,7 @@ Keyword syntax reuses supported FTS5 features (`AND`, `OR`, `NOT`, quoted phrase
   "sessions": [
     {
       "kind": "session",
+      "result_rank": 2,
       "session_id": "cron_example_20261014_091000",
       "source": "cron",
       "title": "Memory governance status report",
@@ -717,17 +717,21 @@ Keyword syntax reuses supported FTS5 features (`AND`, `OR`, `NOT`, quoted phrase
 }
 ~~~
 
-**Envelope contract:** `success`, `mode`, `scope`, `query`, `count` (total groups across both arrays), `conversation_count`, `session_count`, `match_count` (total emitted Message hits), `partial`, `conversations` and `sessions` MUST be present on a successful Search. Counts MUST equal the actual emitted groups/rows. Empty types use `[]` and 0. A lawful explicit non-default `profile` can be reported **once at envelope level**, not once in every source row. Index rebuild and budget diagnostics are included only when actually observed.
+**Envelope fields (MUST):** `success`, `mode`, `scope`, `query`, `count` (number of groups in **both** arrays combined), `conversation_count`, `session_count`, `match_count` (actual emitted matching rows), `partial` (true if index/work-budget/candidate limitations may prevent completeness), `conversations[]` and `sessions[]`. Return [] for an empty type and zero for its count. If an explicitly authorized foreign `profile` was selected, name it once at envelope level, never repeat it per hit; a Read locator is only valid inside the corresponding authorized profile.
 
-**Conversation group** (`kind="conversation"`): `conversation_ref` **once per group**, authentic title or `null`, true `created_at` or `null`, `last_update_at` from last valid real User/Assistant interaction or `null`, real `source` when known, `matches`. Each hit has **full `message_uid`**, authentic timestamp, role, bounded original text excerpt and explicit `truncated` if any original content is omitted. Conversation results MUST NOT show model-facing physical Session IDs, physical `message_id`, `@session` UI links or a redundant per-hit `conversation_ref`.
+**Conversation group `kind="conversation"` (MUST):** one complete `conversation_ref`, inherited native `result_rank` among emitted groups, real title or null, correctly verified creation/last User/Assistant activity timestamps or null, legitimate source and `matches[]`. Each hit carries authentic complete `message_uid`, timestamp, role, bounded match-centered **original** excerpt and a `truncated` indicator when part of the body was omitted. Do not return physical `session_id`, `message_id`, duplicated `conversation_ref` on hits, UI links or old `@session` navigation references as canonical Conversation evidence.
 
-**Session group** (`kind="session"`): exact **owning physical `session_id`**, `source` (e.g. `cron`), actual saved `title` or `null`, actual `started_at` or `null`, actual `last_active_at` or `null`, `matches`. Each Session hit has the exact physical **integer `message_id`**, original timestamp, role, same bounded and match-centered excerpt rules and `truncated` if abbreviated. The `message_id` is a **Session-local read locator**, **NOT** Secretary's `message_uid`/Conversation Provenance and not a long-term stable cross-database ID. Do not emit `conversation_ref`, `message_identity` or synthetic user-Conversation provenance on a Session result **even if `secretary_session_bindings` has a row for that physical Session**.
+**Session group `kind="session"` (MUST):** the **actual physical `session_id` of the selected native winning hit**, `result_rank`, original `source`, native real title or null, native `started_at` and `last_active_at` or null, and `matches[]`. Each hit has the authentic **integer `message_id`**, timestamp, role and bounded source excerpt; a Session hit's `message_id` MUST belong to that displayed physical `session_id`. Preserve native **lineage-level deduplication** internally; do not create one extra model-facing Session group for each physical candidate. Populate extra matches only from the selected winning physical Session — another physical generation is not silently appended with an invalid `session_id`/`message_id` pair. Where additional same-lineage matches are needed, retain the true owner for a separate explicit Read; do not invent a Conversation identity.
 
-`sessions[].session_id` is deliberately permitted as a data locator **only on `kind=session` results**, unlike the privacy-preserving Conversation projection that never returns physical Session IDs. Neither kind includes fabricated user-facing UI navigation URLs/links. A source title match alone can produce an empty `matches:[]` group with a truthful `match_reason="title"`; never fabricate a source Message merely to make the group nonempty.
+`session_id` and `message_id` are deliberately visible for **Session** records as **search-navigation locators only**. They are not equivalent to a durable (`conversation_ref`,`message_uid`) personal provenance key and MUST NOT be placed in `metadata.hermes_provenance`. Even if a Cron physical Session has a DB registry binding, its Search DTO has **no `conversation_ref`**.
 
-**Result ordering:** Pick group winners through a bounded authenticated source-aware ranking pipeline, prioritizing Conversations for `scope="all"` and preserving Cron's native demotion; then place the winners into the two expressly labeled arrays. `limit` caps their **combined** size. `scope="sessions"` exposes Session results without the Conversation priority. Both arrays are ordered within their own kind by the requested sort/ranking. Do not call `partial=false` exhaustive if finite index candidates, omitted groups or ongoing rebuild could materially hide matches.
+**Result rank:** `result_rank` starts at 1 for the highest-ranked emitted surviving result group. It reflects the **native group's relative rank after native Cron demotion and the allowed Conversation fold**, not a newly computed semantic-relevance score. Each of the two arrays is ordered by ascending result_rank within its type; reading the rank permits reconstruction of the combined candidate ordering without a third duplicate `results[]` array.
 
-**Dates:** For Conversation, do **not** use `secretary_conversations.created_at` as a substitute for original Conversation birth if it was only registry-insert time; use a proven owner Session origin or `null`. For `last_update_at`, use the last effective authentic human interaction, not a Noting/background timer or a tool-only row. For Session, use the corresponding physical `sessions.started_at` / bounded last-activity derivation; if not provable, use `null`. Format all exposed instants consistently with explicit timezone; do not invent a status label like `last_update_at` for a Cron Session and thereby imply user dialogue.
+**Title-only matches:** If native title resolution yields a permitted group without an authenticated matched Message, preserve the real metadata and return `matches=[]` with a truthful `match_reason="title"`. Never fabricate a quoted Message or a Message locator from the title alone.
+
+**Dates:** A user's Conversation `created_at` must be a proven real user path birth (or null), not unqualified registry-insert time. `last_update_at` uses the last effective authentic User/Assistant interaction (or null), not a background Noting timer. For a non-user Session, retain native physical `sessions.started_at` and bounded last activity; do not label it with user Conversation dates. Use timezone-aware instants or explicit null, never guess.
+
+**Budget:** The combined group cap and token/character limits (`3.6) are presentation decisions **after native candidate eligibility**. Do not quietly reorder or drop native permitted Cron hits because they are Sessions rather than Conversations. User Main grouping across legitimate Compaction is the expressly authorized exception to physical-lineage presentation.
 
 ### 3.6. Combined bounded result selection: breadth before verbosity
 
