@@ -884,60 +884,25 @@ def test_session_end_catches_up_delta_only_session_tail_without_parent_prefix():
     ]
 
 
-def test_register_supports_provider_collector_and_hook_only_contexts():
+def test_register_supports_one_provider_without_hook_only_fallback():
     plugin = _load_plugin_module()
-
     provider_ctx = ProviderContext()
     plugin.register(provider_ctx)
     assert len(provider_ctx.providers) == 1
     assert provider_ctx.providers[0].name == "nowledge-mem"
-
+    assert provider_ctx.providers[0].get_tool_schemas() == []
     hook_ctx = HookOnlyContext()
     plugin.register(hook_ctx)
-    assert "post_llm_call" in hook_ctx.hooks
+    assert hook_ctx.hooks == {}
 
 
-def test_post_llm_call_fallback_forwards_conversation_history(monkeypatch):
+def test_no_secondary_post_llm_capture_entry_exists():
     plugin = _load_plugin_module()
-    calls = []
-
-    class StubProvider:
-        def sync_turn(self, user_content, assistant_content, *, session_id="", messages=None):
-            calls.append(
-                {
-                    "user_content": user_content,
-                    "assistant_content": assistant_content,
-                    "session_id": session_id,
-                    "messages": messages,
-                }
-            )
-
-    monkeypatch.setattr(
-        plugin,
-        "_get_fallback_provider",
-        lambda *, session_id, kwargs: StubProvider(),
-    )
-
-    conversation_history = [
-        {"role": "system", "content": "skip"},
-        {"role": "user", "content": "question"},
-        {"role": "assistant", "content": "answer"},
-    ]
-    plugin._post_llm_call(
-        session_id="session-hook",
-        user_message="question",
-        assistant_response="answer",
-        conversation_history=conversation_history,
-    )
-
-    assert calls == [
-        {
-            "user_content": "question",
-            "assistant_content": "answer",
-            "session_id": "session-hook",
-            "messages": conversation_history,
-        }
-    ]
+    assert not hasattr(plugin, "_post_llm_call")
+    assert not hasattr(plugin, "_get_fallback_provider")
+    hook_ctx = HookOnlyContext()
+    plugin.register(hook_ctx)
+    assert "post_llm_call" not in hook_ctx.hooks
 
 
 def test_on_session_end_skips_malformed_messages_and_failed_import_does_not_advance_count():
