@@ -31,6 +31,10 @@ Use nmem --json m search QUERY and nmem --json m show ID for reading; consult nm
 """
 
 
+class HistoryReconciliationRequired(RuntimeError):
+    """The acknowledged prefix changed; do not silently mix history revisions."""
+
+
 def _number(config, key, default, low, high, *, integral=False):
     value = config.get(key, default)
     if isinstance(value, str):
@@ -187,10 +191,11 @@ class PersonalNowledgeMemProvider(NowledgeMemProvider):
         if scope.conversation_ref:
             # Archive real pre-compaction evidence, not the model's lossy working list.
             rows = history_rows(self._home, scope.conversation_ref)
-            # This path bypasses MemoryManager's egress handoff; apply its scrub again.
-            from agent.redact import redact_for_egress
-            cleaned = clean_transcript(rows, self._clean_session_messages)
-            cleaned = [{**row, "content": redact_for_egress(row["content"])} for row in cleaned]
+            # The full manager scrub propagates secrets found in one row to every
+            # occurrence in the batch. A per-row scrub would miss bare repetitions.
+            # A host without this facility fails closed instead of sending raw DB text.
+            from agent.memory_manager import _redact_for_provider
+            cleaned = _redact_for_provider(clean_transcript(rows, self._clean_session_messages))
         else:
             # Ordinary Hermes/cron: manager already scrubbed the supplied transcript.
             cleaned = clean_transcript(messages, self._clean_session_messages)
@@ -209,7 +214,7 @@ class PersonalNowledgeMemProvider(NowledgeMemProvider):
             stored = db.execute("SELECT fingerprints FROM receipts WHERE scope=?", (key,)).fetchone()
             previous = json.loads(stored[0]) if stored else []
             if not isinstance(previous, list) or fingerprints[:len(previous)] != previous:
-                raise RuntimeError("Archived history was rewritten; explicit reconciliation required")
+                raise HistoryReconciliationRequired("Archived history was rewritten; explicit reconciliation required")
             delta = cleaned[len(previous):]
             if not delta:
                 return
