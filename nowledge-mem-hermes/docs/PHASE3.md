@@ -814,24 +814,29 @@ Small Secretary source-type and identity projection
 **CJK evidence:** Standard `messages_fts` contains Cron, while the expensive trigram/CJK derived indexes omit Cron/delegate noise; the native `_search_cjk` already has fallback behavior. Reuse it. The explicit `scope="sessions"` can constrain source filters through the existing API when demonstrably necessary, but MUST NOT trigger a new bespoke scanning/recall algorithm. If an index cannot cover a query, give a truthful partial result, not a fake exhaustive “no history.”
 
 **Proof required:** Run the same saved native search/browse fixtures before and after the change, normalize new results back to their physical source rows and original native dedup key, then compare candidate visibility, hit ordering, Cron demotion, title matches, same-context skip, profile limits and archived/rewound rows. Expected differences are **only** the user-Conversation merge, typed Session/Conversation envelopes, explicit scope selection, evidence excerpt formatting, and result-budget choices. Unexplained ranking/visibility differences are a regression.
-### 3.9. Browse — metadata only
+### 3.9. Browse — native bounded recent Session list, with typed presentation
 
-Invocation:
+Model request:
 
 ~~~json
-{"mode":"browse","limit":5}
+{"mode":"browse","scope":"all","limit":5}
 ~~~
 
-Response shape:
+Fictional response example:
 
 ~~~json
 {
   "success": true,
   "mode": "browse",
-  "count": 1,
+  "scope": "all",
+  "count": 2,
+  "conversation_count": 1,
+  "session_count": 1,
   "partial": false,
   "conversations": [
     {
+      "kind": "conversation",
+      "result_rank": 1,
       "conversation_ref": "conv_a1b2c3d4e5f678901234567890abcdef",
       "title": "Secretary memory governance",
       "created_at": "2026-10-12T08:00:00+08:00",
@@ -839,17 +844,35 @@ Response shape:
       "source": "tui",
       "matches": []
     }
+  ],
+  "sessions": [
+    {
+      "kind": "session",
+      "result_rank": 2,
+      "session_id": "cron_example_20261014_091000",
+      "source": "cron",
+      "title": "Daily status report",
+      "started_at": "2026-10-14T09:10:00+08:00",
+      "last_active_at": "2026-10-14T09:12:00+08:00",
+      "matches": []
+    }
   ]
 }
 ~~~
 
-Browse is not an empty-query Search and does not create fabricated matching Message rows. It lists bounded, proven Conversation identities ordered by **effective last authentic conversation activity**, newest first, independently of physical Session rotation. Do not force full transcript hydration, run a model or construct UI links just to browse.
+**No new Browse engine.** Use native `_list_recent_sessions` and `SessionDB.list_recent_sessions_bounded` indexed preselection, existing hidden-source exclusions, current/compaction-root skip, timeout and native recent ordering. The only changed work is **classifying** surviving eligible source records and merging valid repeated physical Main continuation records under their canonical `conversation_ref`. A native-visible Cron row remains a `kind=session` with its selected **physical `session_id`**. Do not create a Conversation from a Cron row, or return a source kind that the original native bounded Browse filtered out.
 
-The current native `list_recent_sessions_bounded` avoids expensive whole-database lineage walks; retain this bounded-query discipline. Browse in the new Secretary-facing projection must group the surviving logical Conversations rather than duplicate rotated physical Sessions.
+Browse is metadata-only: `query` is forbidden and `matches=[]` for each item. It never fabricates a matching Message to populate the group. `scope="sessions"` and `scope="conversations"` are only typed filters on the native-permitted recent sources. Retain native initial overfetch/headroom when grouping and source filtering; a new query should not materialize every Conversation or walk the entire DB just to provide more rows.
 
-### 3.10. Precise Read — **same `session_search` tool, one Message Identity**
+`result_rank` reflects the native recent selection order after permitted Conversation folding and explicit `scope` filtering. `limit` caps **the two arrays combined**. The result never includes model-facing `link` / `@session` UI navigation strings; Session exact IDs are for native read navigation, not UI links or durable user provenance.
 
-**Required new request shape (complete key):**
+### 3.10. Precise Read — one existing `session_search` tool, two original-source locators
+
+**No additional tool.** The model invokes `session_search(mode="read", ...)` with **exactly one** of two distinct locator objects. Both must return the authentic complete anchor text or an explicit `content_too_large` error with the same-tool chunk option (`3.11). Tool exposure still follows the normal native `session_search` configuration; the Read mode is not a privilege granted by the existence of an NM Thread.
+
+#### 3.10.1. User Main Conversation — canonical Secretary Provenance
+
+Request:
 
 ~~~json
 {
@@ -859,28 +882,17 @@ The current native `list_recent_sessions_bounded` avoids expensive whole-databas
     "message_uid": "f09c8e21e7f64b9da325ee88659c26ab"
   },
   "context_before": 0,
-  "context_after": 0,
-  "roles": ["user", "assistant"]
+  "context_after": 0
 }
 ~~~
 
-**Semantics, unambiguously:**
-
-- This invokes **`session_search`**. It does **not** invoke `session_history`, launch a new tool, read an NM Thread or read the entire physical Session.
-- Resolve the target `conversation_ref` inside the authorized owning Hermes profile. Locate that `message_uid` on **that Conversation's current valid History Foreground path**; if absent or excluded after rewind, error rather than searching another Session or branch.
-- The anchor message is mandatory. Its content is **the authentic complete original `content`**, not the Search excerpt; no 800-character cap or head/tail cropping applies.
-- `context_before` and `context_after` are **counts of neighboring valid logical messages** along that same Conversation history, not minutes, SQL row IDs or new Conversations. **Convergence default: zero neighbors** for an exact evidence read; callers can explicitly request more. This leaves `session_history`'s own existing defaults untouched.
-- `roles`, if supplied, filters **neighbor rows**. It MUST NOT quietly suppress the addressed anchor; if the anchor is not authorized for that caller, return a clear permission/error result.
-- Preserve the actual order, role, timestamp and original content of returned neighbors. A neighboring tool row is included only when the caller has explicitly requested that role and it is valid and authorized.
-- No query re-ranking, LLM paraphrase, Memory recall, NM search, “best-effort” identity substitution, or invented source text occurs in precise Read.
-- This operation is read-only: it does not initiate a Turn, Noting task, Context rebuild, Notebook write or NM modification.
-
-Response shape:
+Response:
 
 ~~~json
 {
   "success": true,
   "mode": "read",
+  "kind": "conversation",
   "conversation_ref": "conv_a1b2c3d4e5f678901234567890abcdef",
   "anchor_message_uid": "f09c8e21e7f64b9da325ee88659c26ab",
   "count": 1,
@@ -889,15 +901,68 @@ Response shape:
       "message_uid": "f09c8e21e7f64b9da325ee88659c26ab",
       "timestamp": "2026-10-13T22:32:00+08:00",
       "role": "user",
-      "content": "The complete original content of this message, with no Search truncation."
+      "content": "The full original message, not a bounded Search excerpt."
     }
   ]
 }
 ~~~
 
-This request and response intentionally show **zero neighbors** so the exact original anchor is unambiguous. To fetch two neighbors each way, use the identical `mode="read"` and `message_identity` with `context_before=2` and `context_after=2`; all eligible neighboring rows appear in the same ordered `messages` array with their own UIDs and full bodies. `anchor_message_uid` identifies the requested row once; the normal message row still carries its UID for provenance and consistency.
+Resolve the owning Main `conversation_ref` through **existing** Secretary identity and `get_history_foreground_conn`. The addressed `message_uid` must be on the correct effective path, respecting valid Compaction continuation, fork inheritance, rewinds and edits. A copied UID in a different fork is **not** the same Message Identity. Use the original content field. No physical Session row locator is disclosed as canonical personal Provenance. The separate `session_history(mode="read")` remains restricted to the *current* caller-bound Conversation and its frozen 02 contract.
 
-**Comparison with another existing method:** `session_history({"mode":"read","message_identity":...})` can read the same Message **only if that identity belongs to its bound current Conversation**. Phase 3 `session_search({"mode":"read",...})` is the cross-Conversation route. They share source truth but not the caller's scope.
+#### 3.10.2. Non-user Session — original physical read path and locator
+
+Request:
+
+~~~json
+{
+  "mode": "read",
+  "session_message_locator": {
+    "session_id": "cron_example_20261014_091000",
+    "message_id": 5820
+  },
+  "context_before": 0,
+  "context_after": 0
+}
+~~~
+
+Response:
+
+~~~json
+{
+  "success": true,
+  "mode": "read",
+  "kind": "session",
+  "session_id": "cron_example_20261014_091000",
+  "source": "cron",
+  "anchor_message_id": 5820,
+  "count": 1,
+  "messages": [
+    {
+      "message_id": 5820,
+      "timestamp": "2026-10-14T09:11:00+08:00",
+      "role": "assistant",
+      "content": "The full original Cron report message."
+    }
+  ]
+}
+~~~
+
+Reuse native `_read_scoped`, `_get_session_meta`, physical `get_messages` / `get_messages_around` and `_get_message_storage_state` as appropriate, **not a new transcript store**. First prove that the anchor row `messages.id=message_id` belongs to exactly the supplied `sessions.id=session_id` in the authorized profile; never rebind it to a guessed parent, descendant, foreign-profile record or unrelated row. The normal native explicit-Session lookup's scope/permission semantics are the baseline, **not** the Discovery/Browse hidden-source list: `_HIDDEN_SESSION_SOURCES` historically filters discovery and browse, not an explicit native `session_id` read. Do not silently tighten that direct-read visibility merely because the output is now `kind=session`, or widen profile privilege through this new parameter.
+
+If native explicit Session Read authorizes the known Session but it was not visible through Discovery/Browse, this **does not make it discoverable** and does not assign a Conversation Ref. It is a targeted existing-class read capability. A known user Main with canonical ownership still uses `message_identity` rather than masquerading as a non-user Session; source-class consistency is checked without redefining native profile security.
+
+A Session result's `session_id` is the real owning physical Session of its returned anchor `message_id`. If a Cron execution rotated through Compaction, each physical generation retains its own source row ownership; use the original lineage-aware discovery dedup, not an invented logical Cron Conversation. Optional neighbors are from the **same** physical Session and reuse native window reading, not from unrelated generations.
+
+The locator (`session_id`,`message_id`) is a **physical navigation identifier**, not the approved permanent (`conversation_ref`,`message_uid`) provenance for an NM Memory. Never write it into `metadata.hermes_provenance`, even if there happens to be a Secretary registry binding for that Cron Session.
+
+#### 3.10.3. Shared Read semantics
+
+- With neither locator or both locators, return `success=false, error="invalid_args"`. Do not guess a fallback locator or silently read an entire Session.
+- The anchor is included in full and is authenticated to the correct kind, profile, role and source. `roles`, when supplied, filters **neighbors** but never silently removes the requested anchor. Unreadable/denied anchor returns an explicit error.
+- `context_before` / `context_after` default to zero and refer to authentic Message **counts** within the validated owning **logical Conversation** or **physical Session**, respectively. They are neither SQL row offsets nor cross-Conversation navigation.
+- Return true original text, role and timestamp, not FTS snippet/highlight markers, an LLM paraphrase, shortened Search content or auto-generated memory.
+- Ordinary Read must not silently truncate; an actual transport limit triggers explicit error and optional exact-content chunking (`3.11).
+- Neither mode mutates Secretary Notebook, NM Memory/Thread, native search indexes or Session state.
 
 ### 3.11. Oversized precise Read: explicit, never silent, fallback
 
