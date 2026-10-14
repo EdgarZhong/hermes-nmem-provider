@@ -1,0 +1,24 @@
+name: Personal Hermes Provider
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'nowledge-mem-hermes/**'
+      - 'integrations.json'
+      - '.github/workflows/personal-hermes.yml'
+  pull_request:
+    paths: ['nowledge-mem-hermes/**']
+permissions:
+  contents: read
+jobs:
+  policy-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test dependencies
+        run: python3 -m pip install 'PyYAML>=6,<7'
+      - name: Compile plugin
+        run: python3 -m compileall -q nowledge-mem-hermes
+      - name: Test personal policy using retained upstream helpers
+        run: python3 -m unittest discover -s nowledge-mem-hermes/personal_tests -v
