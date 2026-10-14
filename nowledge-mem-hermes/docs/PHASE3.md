@@ -21,7 +21,7 @@
 | **NM / Nowledge Mem Server** | Central long-term personal knowledge, Memory, Thread, Library, Space/Profile and policy system | Ultimately owns global memory governance; the Agent must not build a parallel authoritative memory database. |
 | **NM Background Intelligence** | NM's own automatic distillation / evolution / maintenance work | Remains **OFF** until both user-defined NM gaps are satisfied. Thread archival alone does not authorize it. |
 | **Conversation** | One user-semantic continuous Secretary path, including valid Compaction continuation, but excluding a new/reset path or a fork | Can span multiple physical Hermes Sessions. |
-| **`conversation_ref`** | Secretary-owned durable opaque Conversation identity | Primary key for logical Conversation ownership; not a Session ID or gateway route. |
+| **`conversation_ref`** | Secretary-owned durable opaque Conversation identity | Source identity for **eligible Main** History/Provenance in Phase 3; registry existence alone does not make a Cron or auxiliary Session eligible. Not a Session ID or gateway route. |
 | **Physical Session / `session_id`** | Hermes execution and transcript scope | May rotate; not by itself the identity of an entire Secretary Conversation. |
 | **`message_uid`** | Hermes's persistent logical message identity | Can be inherited by a fork; is not globally unique across Conversations. |
 | **Message Identity** | **(`conversation_ref`, `message_uid`)** | Canonical Hermes evidence anchor, never a raw SQLite row ID. |
@@ -31,10 +31,10 @@
 | **Context Bundle** | NM's managed personal/agent/space/policy context payload | Only the **stable portion excluding NM Working Memory** is injected into eligible main prompts. |
 | **Memory Candidate Index** | Small set of NM Memory IDs, titles and available dates retrieved for the current user input | Pointers, **not** complete Memory content or verified facts. |
 | **`session_history`** | Existing Secretary tool for searching/reading **the current Conversation** | Retains its existing frozen schema, output, eligibility and runtime restrictions. |
-| **`session_search`** | Existing Hermes native tool for cross-Session discovery/read/scroll/browse; Phase 3 enhances the **same tool** | Its **new Secretary-facing projection** is organized by logical Conversation. No third `session_read` or `conversation_read` tool is created. |
+| **`session_search`** | Existing Hermes native tool for cross-Session discovery/read/scroll/browse; Phase 3 enhances the **same tool** | New projection includes **eligible authorized user-facing Main Conversations only**; Cron and auxiliary Sessions are excluded as results. Same registered name/toolset; no third `session_read` or `conversation_read` tool. |
 | **Search mode** | A `session_search` request that finds matching Conversations and bounded matching-message excerpts | Discovery only. It may truncate excerpts but not IDs. |
 | **Precise Read mode** | **A mode of that same `session_search` tool** that addresses one existing Message Identity and retrieves original content | Not a separate tool and **not** the legacy native read-whole-Session behavior. |
-| **Standalone Cron main Session** | Independent scheduled execution with its own primary Session identity | Eligible for Thread archival **only**, without Context Bundle or turn-start Recall. |
+| **Standalone Cron main Session** | Independent scheduled execution with its own primary Session identity | Eligible for **NM Thread archival only** using physical `session_id`; not a Phase 3 `session_search` source Conversation, even if a registry binding exists. |
 | **Auxiliary runtime** | Noting task, subagent/delegate, background review, tool child, Dreaming/skill refinement or other non-main runtime | Must not independently receive the personalized Bundle or Recall or create an archived Thread. |
 | **NM Thread archival** | Incrementally saving eligible completed transcript text to NM Threads | Not automatic Memory creation, distillation or governance. |
 | **Hermes Provenance** | Secretary Message Identities verified against original History Foreground | Stored in custom NM Memory `metadata.hermes_provenance`; not mapped to NM-native Thread/Message identity. |
@@ -77,7 +77,7 @@ The existing Hermes SessionDB and Secretary identity tables remain the only trut
 
 ### 0.6. Permanent History implementation, distinct native exposure rules (user clarification 2026-10-14)
 
-**User-confirmed invariant:** Once Hermes Secretary owns the History/Provenance implementation of `session_history` and `session_search`, disabling **Noting** does **not** restore the old physical-Session search implementation or change either tool's semantics. **Implementation ownership and tool exposure are separate questions.** These two tools retain their **preexisting, different exposure rules**; neither is gated by NM service availability or Noting participation.
+**User-confirmed invariant:** Once Hermes Secretary owns the History/Provenance implementation of `session_history` and `session_search`, disabling **Noting** does **not** restore the old physical-Session search implementation or change either tool's semantics. The separately specified **source corpus** is limited to authorized user-facing Main Conversations (§0.7), regardless of which lawful runtime invokes the native-selected Search tool. **Implementation ownership and tool exposure are separate questions.** These two tools retain their **preexisting, different exposure rules**; neither is gated by NM service availability or Noting participation.
 
 **`session_history` — 02/04's existing special Main exposure contract:**
 
@@ -94,6 +94,25 @@ The existing Hermes SessionDB and Secretary identity tables remain the only trut
 - This deliberate History **implementation takeover** is the narrow exception to “Noting-off should otherwise behave like native Hermes.” It does **not** override the native `session_search` tool configuration/visibility mechanism.
 
 **Source status:** The `session_history` Main guarantee and Noting restriction are **Existing** in effective 02/04 and the current Core. The native `session_search` configuration/toolset path is **Existing** in `toolsets.py`, `hermes_cli/tools_config.py`, `model_tools.py` and the registered `check_fn`. The new logical-Conversation `session_search` implementation, new Schema and new native Search Guidance are **Target** in the separate Hermes Secretary Core repo, not yet implemented.
+
+### 0.7. Phase 3 History corpus: user-facing Main Conversations only (user scope decision 2026-10-14)
+
+**User-confirmed scope reduction:** Phase 3's **new logical-Conversation History Search, Browse and Precise Read corpus** consists of authorized **user-facing Main Conversations** that satisfy Secretary's canonical ownership/path rules. Ordinary continuation, valid Compaction continuation, user-initiated new/reset and real branch/fork semantics remain governed by their existing Conversation identities. A Noting Child may read **only its authorized Parent Conversation** via `session_history`; this is not an independent searchable Conversation.
+
+**Standalone Hermes Cron Sessions are explicitly OUT OF SCOPE as source Conversations and provenance anchors** for the Phase 3 logical-Conversation `session_search` projection. So are Noting task Sessions, delegated/subagent Sessions, tool children, background review and other auxiliary-task Sessions. No new Conversation Ref creation, Cron-specific identity/alias lifecycle, provenance indexing, or physical-Session fallback is required for them.
+
+**Implementation/representation distinction:** This exclusion does **not** assert that the current `state.db` contains no `conversation_ref` bound to any Cron Session. The inspected `SessionDB` new-session path invokes `secretary_session_created_conn()`, which can bind the identity registry for physical Sessions outside user-facing Main. Existing bindings must neither be removed nor treated alone as admission to the Phase 3 Search corpus. Source-type/runtime ownership **AND** valid Conversation path **AND** requested caller permission must be checked. A minted Ref is not by itself proof of product eligibility.
+
+**Three independent policy axes:**
+
+| Axis | Cron Phase 3 rule |
+| --- | --- |
+| **History target / indexed source** | **Excluded** from new logical-Conversation `session_search` Search/Browse, and from the target for `mode="read"`, even if a DB binding already happens to exist. |
+| **Agent tool visibility** | **Unchanged**: Cron may lawfully have native-configured `session_search` available, per §0.6 and §3.2. This does not force its own Session into the results or grant any new cross-profile permission. |
+| **NM Provider Thread archival** | **Still INCLUDED** for an independent Cron job's own primary physical Session, using `session_id` as the Thread archive key (§1.2 / §2.2). It does not require or create a `conversation_ref`, and does not trigger Memory distillation. |
+
+No user request here authorizes changing general SessionDB identity registration, existing persisted Cron records, the Hermes native toolset configuration, or NM Thread sync. Historical-Cron-as-Provenance support is **deferred outside this Phase**, not a required implementation blocker or a claim of structural impossibility.
+
 
 ---
 
@@ -335,7 +354,7 @@ Current `HISTORY_SEARCH_GUIDANCE` already says: use `session_history` first for 
 
 ### 3.2. One canonical `session_search` implementation, unchanged native toolset exposure
 
-**Product-level Target:** Preserve the existing registry name `session_search` and its **native registration, selection and dispatch availability rules**, replacing **only its lower-level function Schema, Handler, logical-Conversation result projection, and corresponding tool-aware System Prompt guidance**. The canonical tool is not a Noting or NM feature. When a runtime is already entitled to the tool, it uses the same Secretary implementation regardless of Noting; when the native configuration excludes it, the tool stays absent.
+**Product-level Target:** Preserve the existing registry name `session_search` and its **native registration, selection and dispatch availability rules**, replacing **only its lower-level function Schema, Handler, logical-Conversation result projection, and corresponding tool-aware System Prompt guidance**. The canonical tool is not a Noting or NM feature. When a runtime is already entitled to the tool, it uses the same Secretary implementation regardless of Noting; when the native configuration excludes it, the tool stays absent. **The corpus is separate:** Cron and auxiliary Sessions do not become searchable source Conversations merely because a caller or a stored Session has a `conversation_ref`; see §0.7.
 
 The canonical tool has three **explicit** modes:
 
