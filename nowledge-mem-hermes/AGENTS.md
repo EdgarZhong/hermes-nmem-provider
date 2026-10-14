@@ -11,4 +11,5 @@ The user's confirmed Phase 3 architectural decisions override inherited upstream
 - Respect existing Secretary approval. The CLI --apply flag is not an authorization capability.
 - Run python3 -m unittest discover -s nowledge-mem-hermes/personal_tests -v.
 - Do not modify user profiles, real NM data, other integrations or publish registries during tests.
-- session_search changes belong in the separate Secretary Core repository; this plugin does not monkey-patch it.
+- `session_history` and redesigned `session_search` are permanent Secretary Core History/Provenance capabilities for eligible Main Conversations, independent of global/local Noting and NM availability. Noting-off does NOT restore legacy physical Session search. `session_history` keeps the frozen 02 contract; the one canonical `session_search` Schema and native Search System Prompt replacement are targets in docs/PHASE3.md §§3.2–3.15. Noting Child remains Parent-history-only; no auxiliary cross-Conversation privilege expansion.
+- `session_search` code/Schema/Prompt changes belong in the separate Secretary Core repository; this plugin does not monkey-patch them.
