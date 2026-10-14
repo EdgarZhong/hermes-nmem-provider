@@ -1032,7 +1032,7 @@ The chunk fallback is a **target engineering convergence**, not an existing nati
 1. Keep `tools/session_history_tool.py` Schema/handler and `secretary/noting_surface.py::apply_main_read_surface()` mandatory Main injection exactly under the inherited 02/04 semantics. Do **not** couple this path to NM or Noting status.
 2. Replace the `session_search` implementation **in place** at its existing `registry.register(name="session_search", toolset="session_search", ...)` seam. Preserve `toolsets.py` membership, `hermes_cli/tools_config.py::_get_platform_tools`, default composites, `platform_toolsets`, `agent.disabled_toolsets`, `model_tools.get_tool_definitions`, and the registered readiness `check_fn`.
 3. **Do not add `session_search` to `apply_main_read_surface()`'s compulsory Main tool list.** Do not create a separate Main-only toolset, default override, whitelist, model parameter, alternative native implementation or Shadow Schema to replace Hermes's configured tool visibility.
-4. Native config may lawfully disable `session_search`. That MUST remove the tool and its tool-aware `SESSION_SEARCH_GUIDANCE`; it MUST NOT disable `session_history` for an eligible Main. If enabled, its logical-Conversation Schema and Handler are the same under both Noting switch states.
+4. Native config may lawfully disable `session_search`. That MUST remove the tool and its tool-aware `SESSION_SEARCH_GUIDANCE`; it MUST NOT disable `session_history` for an eligible Main. If enabled, the **same two-kind Conversation/Session** Schema and native-reuse Handler apply under both Noting switch states.
 5. Background runtimes are not automatically granted a tool, but neither are their existing lawful configured tools stripped simply for being non-Main. Executing a configured `session_search` remains constrained by existing profile and runtime authorizations; a toolset entry does not create valid evidence or authorize an unbound foreign Conversation.
 6. Noting Child retains its frozen Parent prefix and explicit appended permitted tool list and strict dispatch whitelist. It can be given `session_history` to read that Parent's valid History, **not** arbitrary `session_search`. Global Session Search Schema replacement does not change its actual dispatch permission.
 7. Preserve actual native tool-prompt synchronization and cache boundaries. `/noting off` alone must not change either History contract or any Search toolset selection; a real `hermes tools` or profile setting change may affect `session_search` via the *existing* native tool reload mechanism.
@@ -1052,13 +1052,20 @@ The Core acceptance suite MUST include all of the following (not only JSON shape
 - A valid forked Conversation may share a source physical message/UID with its parent but has a **different** Message Identity pair.
 - Rewound/edited rows and excluded inherited branch messages are never accepted as current evidence.
 - Search budget pressure first compacts excerpts, then repeated same-group hits, only then entire groups; never trims IDs.
-- `session_search(mode="read",message_identity=...)` returns the **unmodified complete** original anchor, independent of prior Search text; the same call with Context neighbors is ordered and authorized.
+- The same `session_search(mode="read")` returns the complete original anchor with **`message_identity` for a user Conversation** or **`session_message_locator` for an unattended Session**, independently of prior Search excerpts. Read neighbors stay within the authenticated owning Conversation or physical Session.
 - Oversized full Read returns an explicit size error and a usable, reassemblable same-tool chunk option; no silent success with cut content.
 - Wrong-Conversation UID, missing Ref, invalid profile, unknown timestamp or unavailable DB produce truthful failures rather than a guessed fallback.
 - The same eligible Main receives **compulsory** Secretary `session_history` whether Noting or NM is on or off; the new `session_search` appears **only when the original Hermes toolset configuration and readiness checks allow it**, with unchanged exposure under Noting on/off.
 - Noting Child cannot obtain arbitrary cross-Conversation capability; Cron/background runtimes retain exactly their lawful native toolset selection and profile scope. **Noting-disabled Secretary Main retains the rewritten `session_search` if normally configured**, not a physical-Session fallback.
 - Tests run with realistic larger SessionDBs and capped query time; no unbounded per-Conversation full-history expansion or N+1 slow path.
 - The canonical `session_search` **Tool Schema** is advertised exactly when the native toolset permits the tool, and its **tool-aware System Prompt** is included iff the final tool names contain `session_search`. Both copy-exact targets in §3.3 and §3.15 agree with dispatch, without forced Main exposure, Noting fallback or unauthorized child access.
+
+- A golden native-Hermes fixture compares **physical candidate rows, relative rank, `_resolve_lineage` dedup, same-live-context skip, title hits, Cron demotion and native source filters** to the upgraded DTO's origins. Only authorized Main logical grouping, explicit `scope`, bounded output and new presentation may explain differences.
+- An eligible Cron hit stays `kind=session` with its actual physical `session_id` and `message_id`, including native Cron demotion; it does **not** gain `conversation_ref` even if a Secretary DB binding exists.
+- A known physical-Session direct Read retains **native explicit-read profile/permission scope**, which differs from Discovery/Browse's hidden sources. Tool/subagent/kanban stay hidden in Discovery/Browse, without newly imposing a blanket hidden-source denial on otherwise lawful explicit Reads.
+- An explicit `scope="sessions"` CJK query reuses native `SessionSearchMixin._search_cjk` / `source_filter` / bounded LIKE planning, with no new index, LLM retriever or source privilege.
+- The Schema accepts two distinct Read locator types but exactly one per request; Conversation results never expose physical provenance and Session results never forge user Message Identity.
+
 
 ### 3.15. System Prompt: native tool-aware Session Search Guidance replacement
 
@@ -1413,14 +1420,14 @@ This is a **specification rewrite and clarification**, not a blanket approval to
 - `docs/02-noting-system-specification.md` — especially §§2.2–2.4 and 5.12 for History Foreground, `session_history` schema/prompt, provenance, Compaction/Noting.
 - `docs/06-Hermes-Secretary-Web-UI-V1-Spec.md` — architectural authority/non-regression and no invented UI backend/API.
 - `tools/session_history_tool.py` — unchanged current-Conversation Search/Read, actual ~800-character Search behavior.
-- `tools/session_search_tool.py` — original native physical-Session handler baseline; **retain** registry name `session_search`, `toolset="session_search"` and `check_fn`, but replace Schema/Handler in place.
+- `tools/session_search_tool.py` — the **implementation to reuse**: `_discover`, native FTS candidates, `_title_match_result`, Cron demotion, `_resolve_lineage` / same-context filtering, `_list_recent_sessions` bounded Browse, `_read_scoped`, `_scroll` and per-profile dispatcher. Preserve registry name/toolset/check_fn; adapt schema/handler and output projection narrowly.
 - `toolsets.py` — native `session_search` and `session_history` toolset entries, shared `_HERMES_CORE_TOOLS`, platform composite templates and restricted variants.
 - `hermes_cli/platforms.py` — per-platform default composite keys (e.g. CLI `hermes-cli`, Telegram `hermes-telegram`).
 - `hermes_cli/tools_config.py` — `hermes tools` options, `platform_toolsets` resolution, saved explicit choices, recent-toolset recovery, and global `agent.disabled_toolsets` pruning.
 - `hermes_cli/config_defaults.py` — default `toolsets: [hermes-cli]` and `agent.disabled_toolsets: []` baseline.
 - `model_tools.py` and `agent/agent_init.py` — final `enabled_toolsets`/`disabled_toolsets` schema selection at actual agent setup.
 - `agent/system_prompt.py::_tool_guidance_block()` — existing `SESSION_SEARCH_GUIDANCE` injection gated on the final `"session_search" in agent.valid_tool_names` condition.
-- `hermes_state_search.py` — existing FTS5/CJK/LIKE candidates and native `snippet()`.
+- `hermes_state_search.py` / `hermes_state_common.py` — FTS5/CJK/trigram/LIKE candidates, native query sanitization/source-role-time predicates, index rebuild/repair, source-specific CJK limits and native `snippet()`; **no new retrieval engine**.
 - `hermes_state_secretary_identity.py` — stable Conversation registry / resolution.
 - `hermes_state_secretary_foreground.py` — canonical effective History Foreground and Message Identity, including valid forks/Compaction/rewind.
 - `secretary/noting_surface.py`, `secretary/noting_child.py`, `agent/system_prompt.py` — eligible Main read tool exposure, Parent-only Noting and prompt prefix behavior.
