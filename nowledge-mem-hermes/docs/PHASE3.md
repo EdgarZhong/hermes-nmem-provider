@@ -845,10 +845,10 @@ The Core acceptance suite MUST include all of the following (not only JSON shape
 - `session_search(mode="read",message_identity=...)` returns the **unmodified complete** original anchor, independent of prior Search text; the same call with Context neighbors is ordered and authorized.
 - Oversized full Read returns an explicit size error and a usable, reassemblable same-tool chunk option; no silent success with cut content.
 - Wrong-Conversation UID, missing Ref, invalid profile, unknown timestamp or unavailable DB produce truthful failures rather than a guessed fallback.
-- The same eligible Main receives the **identical** Secretary `session_history` and `session_search` contracts when Noting is on versus globally/local off; both still work when NM is absent or unreachable.
-- Noting Child cannot obtain cross-Conversation capabilities; legal background runtime permission checks remain effective. **Noting-disabled Secretary Main keeps the rewritten History tools**, not the legacy physical-Session Search.
+- The same eligible Main receives **compulsory** Secretary `session_history` whether Noting or NM is on or off; the new `session_search` appears **only when the original Hermes toolset configuration and readiness checks allow it**, with unchanged exposure under Noting on/off.
+- Noting Child cannot obtain arbitrary cross-Conversation capability; Cron/background runtimes retain exactly their lawful native toolset selection and profile scope. **Noting-disabled Secretary Main retains the rewritten `session_search` if normally configured**, not a physical-Session fallback.
 - Tests run with realistic larger SessionDBs and capped query time; no unbounded per-Conversation full-history expansion or N+1 slow path.
-- The canonical `session_search` **Tool Schema** is advertised exactly, separately from the Main **System Prompt**; the copy-exact text targets in §3.3 and §3.15 agree with the dispatcher, with no native fallback on Noting-off, stale pinned roots or extra Noting privileges.
+- The canonical `session_search` **Tool Schema** is advertised exactly when the native toolset permits the tool, and its **tool-aware System Prompt** is included iff the final tool names contain `session_search`. Both copy-exact targets in §3.3 and §3.15 agree with dispatch, without forced Main exposure, Noting fallback or unauthorized child access.
 
 ### 3.15. System Prompt: native tool-aware Session Search Guidance replacement
 
@@ -1056,45 +1056,47 @@ When NM eventually implements G1 and G2 with proven server-side message-level ba
 
 **Existing tests:** The fork's `personal_tests` suite and mock/local HTTP transport exercises these cases; the last retained report documents 53 tests green on Linux and Windows, with installed plug-in/host-loop live NM acceptance **not performed**. A test of the Policy class alone is not proof of actual Hermes Core hook invocation.
 
-### 5.2. Package B: Secretary Core permanent History takeover (not yet implemented)
+### 5.2. Package B: in-place `session_search` implementation replacement (not yet implemented)
 
-**Required files in `EdgarZhong/hermes-secretary`:** `tools/session_search_tool.py` (replace the existing native tool Schema/handler under the **same name**), `hermes_state_search.py` (reuse physical FTS candidates as needed), `hermes_state_secretary_identity.py` and `hermes_state_secretary_foreground.py` (actual Conversation and Message authority), `secretary/noting_surface.py` (Main History tool exposure, independent of Noting), `agent/prompt_builder.py::SESSION_SEARCH_GUIDANCE` (exact text replacement in §3.15.2), `agent/system_prompt.py` (actual prompt assembly), and applicable tests. Placement is subject to inspection of actual native build/persistence seams, not an invented second tool.
+**Required source owners in `EdgarZhong/hermes-secretary`:** `tools/session_search_tool.py` (registered Schema/Handler under unchanged tool name, `toolset="session_search"` and existing `check_fn`); `hermes_state_search.py` (existing FTS5/SQLite source candidates); `hermes_state_secretary_identity.py` / `hermes_state_secretary_foreground.py` (Conversation and Message provenance); `agent/prompt_builder.py::SESSION_SEARCH_GUIDANCE` (verbatim §3.15.2 replacement); and tests. **`toolsets.py`, `hermes_cli/tools_config.py`, `hermes_cli/platforms.py`, `model_tools.py` and `secretary/noting_surface.py` are inspection/regression references, not an invitation to change native Search exposure or 02's mandatory Main History contract.** Only source-proven minimal glue is authorized.
 
 **Implementation order:**
 
-1. Freeze source-based regression tests for Secretary `session_history` identity, current-Conversation restriction and exact frozen 02 guidance. Treat the previous native `session_search` Schema/behavior as **baseline evidence for code reuse**, not a normative runtime-compatibility requirement.
-2. Establish an **always-on eligible-Main** History tool surface with **both** `session_history` and `session_search`. Neither `noting.enabled=false` nor `/noting off` nor NM Provider absence may remove these tools or select old physical-Session behaviors.
-3. Replace the existing `SESSION_SEARCH_SCHEMA` with the **one canonical Secretary Schema in §3.3**. Implement same-tool `mode="search"|"browse"|"read"` dispatch and strict parameter validation. **No second tool and no dual native/Secretary Schema selector.**
-4. Replace the existing `agent/prompt_builder.py::SESSION_SEARCH_GUIDANCE` **verbatim** with §3.15.2; leave `HISTORY_SEARCH_GUIDANCE` and unrelated Notebook/Noting prompts unchanged. Activate the correct root/tool pair once at legitimate construction/restoration boundaries, with no rebuild on Noting toggles.
-5. Reuse FTS5 candidate retrieval and map/validate physical rows to logical Conversation paths **before grouping**. Do not rewrite the native search index needlessly.
-6. Project real Conversation metadata, bounded match-centered excerpts and truthful partial/incomplete result signals; never expose UI links or physical IDs as Message Identity.
-7. Implement canonical precise Read via the **same `session_search`**, optional same-Conversation neighbors, full raw body or explicit oversized/error/checked chunking.
-8. Test fork/branch, rewind/edit, Compaction continuity, inherited rows, multi-profile isolation and time-bound correctness with real SessionDB fixtures.
-9. Test Noting on, Noting globally off, `/noting off`, no Notebook Snapshot and no NM Provider: **History tool semantics/Schema/Prompt must be identical** for each eligible Main. Verify Noting child Parent-only restrictions and no auxiliary privilege escalation.
-10. Validate old pinned roots and tool schemas on resume; perform only a justified **one-time** upgrade, not per-Turn churn. Assess any *real* external client depending on removed physical-Session arguments separately; do not reinstate them automatically or hide a native fallback behind Noting-off.
-11. Report exact implemented code, results, benchmarks, scope limits and known blockers. Passing NM Provider CI does not mark this Core package complete.
+1. Baseline 02/04 and current source: `session_history` is mandatory for eligible Main regardless of toolsets/Noting; Noting Child has a strict Parent-only exception; all other lawful toolset exposure remains unchanged.
+2. Snapshot the actual native `session_search` visibility matrix **before** changing it: `hermes tools` checklist, default CLI/messaging/Cron composites, explicitly saved `platform_toolsets`, `agent.disabled_toolsets`, per-session overrides, `check_session_search_requirements()`, and existing Main/auxiliary entries. Test a default selected Main, a Main with Search explicitly disabled, and a Cron/subagent with lawfully selected Search.
+3. Replace only the existing registered `SESSION_SEARCH_SCHEMA` and handler under the **same registry name, same native toolset and readiness check** (§3.3). Do not append `session_search` to Secretary's compulsory Main read tools; do not create a `secretary.session_search_enabled` toggle.
+4. Implement the same-tool `mode="search"|"browse"|"read"` dispatch and strict argument validation; no second History tool, alternate model-facing native physical-Session Schema or Noting-off fallback.
+5. Replace `agent/prompt_builder.py::SESSION_SEARCH_GUIDANCE` **verbatim** with §3.15.2; retain its original `"session_search" in agent.valid_tool_names` injection condition. Preserve 02's independent `HISTORY_SEARCH_GUIDANCE` and Notebook/Noting texts.
+6. Reuse native FTS5/SQLite candidates and validate each physical hit against authoritative logical Conversation and Message path **before** grouping.
+7. Return truthful group titles/times, match-centered original excerpts, bounded output and explicit partial/incomplete diagnostics; no UI links or physical row IDs exposed as provenance.
+8. Implement exact keyed evidence Read with optional neighbors and explicit oversized-message error/chunking via the **same tool**; enforce native profile/scope permissions.
+9. Test fork/branch, rewind/edit, Compaction, source text, metadata, large output and query performance on representative SessionDB fixtures.
+10. **Differential exposure acceptance:** toggling Noting or NM changes **neither** `session_history` mandatory Main behavior **nor** `session_search` native selection; a lawful saved native toolset/denylist change **does** change `session_search` visibility and its accompanying guidance. Preserve existing background/Cron legal configurations and Noting Child's restricted Parent History.
+11. Reconcile any real pinned old root/schema at a native build/Turn boundary once when necessary, **without creating a new Main-only Search activation mechanism or rebuilding on every Turn**.
+12. Report actual code SHA, test evidence, any lawful external consumer affected by the replaced legacy physical-Session arguments, remaining database coverage issues and unproven integration paths.
 
-**Out of scope:** alternate UI deep links, a new `session_read` tool, general replacement History database, NM Memory embedding search inside Core, or a second physical-Session model-facing tool/schema provided as a Noting-disabled compatibility mode.
+**Out of scope:** forcing Search on for a disabled Main, modifying the native `hermes tools` selection model, altering platform defaults, a parallel Search provider, UI deep links, NM Memory search in Core, or a new `session_read` tool.
 
 ### 5.3. Cross-cutting lifecycle and integration acceptance matrix
 
-| Scenario | Provider result | Core search/read result | Acceptance evidence |
+| Scenario | NM Provider result | Hermes History/Search result | Required evidence |
 | --- | --- | --- | --- |
-| New legitimate Main | Frozen stable Bundle and eligible recall; Thread sync on completed Turns | Current `session_history` unchanged; cross-Conversation tool usable | Actual host prompt, NM test backend and SessionDB |
-| Long-lived Main with multiple Compactions | Same NM logical archive and root-cache rules | Old authentic messages found under one Ref | Real multi-rotation history |
-| Main fork/new/reset | Distinct effective archive identity | Fork source pair correct; copied UIDs not merged | Valid branch fixtures |
-| Independent Cron main | No Bundle/Recall; own Thread sync | No automatic Secretary-only schema upgrade | Real cron dispatch |
-| Cron/interactive delegated child | No own Bundle, Recall or Thread sync | No extra cross-Conversation privilege | Child tool and transcript evidence |
-| Noting child | No own Plugin operations; parent frozen prefix unmodified | Parent-only history remains, no arbitrary cross-Conversation Search | Noting scope/cache-parity tests |
-| NM server timeout or invalid HTTP response | Dialog/Turn continues without false candidates or receipt advancement | No relation to Hermes History truth | Fault-injection + live smoke |
-| Thread append server-ack ambiguity | Retry with dedup; no exactly-once claim | Original evidence unaffected | Simulated commit+timeout |
-| Rewind/edit of archived prefix | Explicit reconciliation-required, no silent append | Invalid old messages excluded | True rewrite fixtures |
-| Memory with multiple sources | Approved CLI-helper metadata round trip | Each source pair precisely readable in the correct Conversation | Exact-ID readbacks |
-| Very long Search-hit message | No impact on provider | Match-centered excerpts, full keyed Read or explicit chunk fallback | Real source >10,000 chars |
-| Eligible Secretary Main with Noting globally off or local `/noting off` | Provider behavior depends on its own runtime/config, **not** Noting | **Same Secretary `session_history` + canonical `session_search` Schema, results and guidance** as Noting on; no physical-Session fallback | On/off differential tests |
-| Eligible Secretary Main with NM plugin disabled or NM unreachable | No Bundle/Recall and no successful Thread upload | **Both Secretary History tools still work** against the original host DB, independent of NM | NM-off and outage regression |
-| Genuine native/upstream Hermes deployment outside Secretary product | No personal Provider expected | This Phase 3 fork change imposes no requirement on upstream Hermes | Repository boundary check |
-| Cold resume / cached Gateway Agent | No stale wrong-scope Bundle or archive attribution | Correct current Conversation and prompt pin | Persistence/resume integration |
+| New Main with native default `session_search` enabled | Stable Bundle/Recall and completed-turn Thread sync per §1–2 | Compulsory `session_history`; native-selected canonical `session_search` + exact Search guidance | Native tool list, prompt, real SessionDB |
+| Main with native Search explicitly excluded (`platform_toolsets` or `agent.disabled_toolsets`) | Unrelated NM policy unchanged | **`session_history` remains mandatory**; `session_search` and its tool-aware guidance are absent | Saved-config and final-tool differential |
+| Main with global/local Noting off | NM governed by NM/provider policy, not Noting | `session_history` unchanged; `session_search` selection still follows native toolsets; **no physical-Session fallback** | Noting toggles with both enabled/disabled Search config |
+| Main with NM disabled or disconnected | No successful NM Context/Recall/Thread transport | Hermes History remains; `session_search` availability still depends on native tool configuration, not NM | Offline fault-injection and native tool list |
+| Main across rotating/in-place Compaction | Same permitted logical archive and prompt-cache boundaries | Same valid Conversation Ref and source Message UIDs, stable Search contract if selected | Multi-generation History fixtures |
+| Main fork/new/reset | Separate effective NM archive identity | Different Conversation Refs; copied Message UIDs do not conflate evidence | Branch/reset acceptance |
+| Standalone Cron main | Own Thread sync; no own NM Bundle/Recall | Retains **native** configured Search visibility (which may include it); **no forced Main `session_history` injection** | Cron actual agent toolset and source |
+| Ordinary subagent/background child | No own NM context/retrieval/sync per §1.2 | No new tool injection or removal; existing lawful native Search choice and actual execution permission unchanged | Delegated/child actual tool list and dispatch |
+| Dedicated Noting Child | No independent NM Provider operations; frozen Parent prefix | Parent-bound `session_history`; **no arbitrary cross-Conversation `session_search`** | Noting whitelist + cache-parity |
+| NM timeout or invalid HTTP response | Graceful degraded context, no false Memory candidates or advanced archive cursor | Original Hermes History unaffected | Fault injection |
+| Thread append ack ambiguity | Retry within original Thread target, no exactly-once claim | Original Hermes evidence unaffected | Simulated server commit+timeout |
+| Rewind/edit archived prefix | Explicit archive reconciliation required | Invalidated source Messages not returned by History/Search | Rewrite fixture |
+| Memory with several provenance sources | Approved custom metadata + readback | Each canonical source pair precisely readable if authorized | Real canonical identity roundtrip |
+| 10,000+ char Search hit | No NM interaction required | True match-centered excerpts; exact keyed Read or explicit size handling | Large-source fixture |
+| Genuine upstream Hermes deployment (not the Secretary fork) | No Phase 3 requirement | No code/config changes in that external repository | Repo boundary inspection |
+| Cold resume/old pinned prompt | No stale wrong-scope Bundle | One lawful host-native Schema/prompt upgrade, **without changing the configured toolset selection** | Real restored Agent and prompt-cache trace |
 
 ### 5.4. Required quality and factual-reporting gates
 
