@@ -1,0 +1,67 @@
+name: Finalize Personal Hermes Test Contracts
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/phase3-contract-finish.yml']
+permissions:
+  contents: write
+jobs:
+  migrate-and-verify:
+    if: github.repository == 'EdgarZhong/hermes-nmem-provider'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - name: Test dependencies
+        run: python3 -m pip install pytest 'PyYAML>=6,<7'
+      - name: Replace only two retired hook tests with single-provider assertions
+        run: |
+          python3 - <<'PY'
+          import ast
+          from pathlib import Path
+          path = Path('nowledge-mem-hermes/tests/test_session_sync.py')
+          text = path.read_text(encoding='utf-8')
+          lines = text.splitlines(keepends=True)
+          replacements = {
+            'test_register_supports_provider_collector_and_hook_only_contexts': '''def test_register_supports_one_provider_without_hook_only_fallback():
+              plugin = _load_plugin_module()
+              provider_ctx = ProviderContext()
+              plugin.register(provider_ctx)
+              assert len(provider_ctx.providers) == 1
+              assert provider_ctx.providers[0].name == "nowledge-mem"
+              assert provider_ctx.providers[0].get_tool_schemas() == []
+              hook_ctx = HookOnlyContext()
+              plugin.register(hook_ctx)
+              assert hook_ctx.hooks == {}
+          ''',
+            'test_post_llm_call_fallback_forwards_conversation_history': '''def test_no_secondary_post_llm_capture_entry_exists():
+              plugin = _load_plugin_module()
+              assert not hasattr(plugin, "_post_llm_call")
+              assert not hasattr(plugin, "_get_fallback_provider")
+              hook_ctx = HookOnlyContext()
+              plugin.register(hook_ctx)
+              assert "post_llm_call" not in hook_ctx.hooks
+          '''}
+          nodes = [n for n in ast.parse(text).body if isinstance(n, ast.FunctionDef) and n.name in replacements]
+          assert len(nodes) == 2, 'Do not rewrite an unexpected test revision'
+          for node in sorted(nodes, key=lambda n: n.lineno, reverse=True):
+              lines[node.lineno-1:node.end_lineno] = [replacements[node.name]]
+          updated = ''.join(lines)
+          compile(updated, str(path), 'exec')
+          path.write_text(updated, encoding='utf-8')
+          PY
+      - name: Run all retained upstream helper and release tests
+        run: python3 -m pytest nowledge-mem-hermes/tests -q
+      - name: Run personal policy and transport tests
+        run: python3 -m unittest discover -s nowledge-mem-hermes/personal_tests -v
+      - name: Exercise real Bash installer in disposable profile
+        run: bash nowledge-mem-hermes/tests/test_setup.sh
+      - name: Commit validated test migration and remove this one-time workflow
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add nowledge-mem-hermes/tests/test_session_sync.py
+          git rm .github/workflows/phase3-contract-finish.yml
+          git commit -m 'test(hermes): align registration regression with one native provider and no duplicate sync'
+          git push origin HEAD:main
