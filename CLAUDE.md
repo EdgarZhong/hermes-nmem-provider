@@ -4,7 +4,17 @@
 
 暂无。本轮小脚本两步失败时保留已创建ID、仅修复Metadata是落实用户指定流程的必要工程细化，不是用户另行批准的通用重试系统。
 
-## 第三轮本地托管实施（2026-10-17）
+## C10-P 个人旧测试收口（2026-10-17）
+
+- 起点／当前已接收实现：`57d0abb854f4ae71207b85bf247afa446d5ac65e`，分支 `codex/round3-local-completion`；P1/P2/P3已由主会话review并提交。本次仅改 `personal_tests/test_personal.py`、`test_security.py` 与本状态记录，不改生产实现、真实profile或依赖。
+- 两旧文件按现行PHASE3收口：Bundle原生重建时重新读取、长opaque ID完整保留、真实SessionDB／UID与合法压缩续接、包含tool的整批egress、缺失host scrubber拒绝；原有scope/offline/增量收据/重写停止等断言保留。
+- 退出10个旧完整HTTP写入／强制History成员校验／expected-sha／通用回读协议测试，仅保留2项现行窄helper基本模拟（preview无I/O、metadata-only准确provenance与无关字段保留）；没有新增严格P2或真实NM写入。
+- 测试入口：公共canonical runner＋公共PM解释器。插件目录带连字符，pytest直接收集会错误按无package导入`__init__.py`；在 ignored `temp-r3-personal/evidence/c10-p/runner/` 放两测试源码symlink即可，测试内`__file__.resolve()`仍指原源码，不复制或改生产包。准确命令见公共 `c10-personal-report.md`。
+- 真实baseline 32通过／15失败；修复后受共享真实host fixture影响的两文件共39项通过（1.3秒）。第一次定向修复的3例仅因临时目录先于DB.close清理失败，已调整cleanup顺序并通过。Ruff与C901≤20通过，格式化AST不变；`git diff --check`通过。
+- P1/P3新46项未重跑，既有P2基本脚本未重跑；不访问真实NM、真实模型、产品profile或云端。本包不复验公共C9-H；正式模型／产品测试仍仅由唯一owner使用round3隔离profile。
+- 证据：`temp-r3-personal/evidence/c10-p/{initial.log,baseline.log,repair.log,shared-fixture-final.log,ruff.log,complexity.log,manifest.json,c10-personal.patch}`；交回公共 `.autonomous/20261016-round3-secretary-nm/c10-personal-report.md`。C10-P已由主会话亲自review接收；39项证据复用，根与插件README同步canonical入口。个人正式host→fixture开发复测由personal_provider准备，等待公共实测owner交出round3独占权。
+
+## 第三轮P1/P2/P3首次交回记录（2026-10-17，后由57d0abb接收）
 
 - 本轮已恢复本地完整实施；当前分支 `codex/round3-local-completion`，从冻结 main `97078118` 开始，已应用云端 P1 `676fec37`、P2 `e2c01dab`；主会话 review 后统一提交，当前未提交。
 - P3 已实现，待主会话 review：completed 快照边界、明确 ACK 收据、路径变化停止、窄脚本与安装说明接线；公共产品只读。

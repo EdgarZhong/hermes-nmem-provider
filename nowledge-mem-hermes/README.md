@@ -108,12 +108,17 @@ for exact statuses and the small-script basic-check boundary.
 ## Tests and boundaries
 
 ```bash
-# Use the Hermes PM interpreter; Thread integration needs Hermes on PYTHONPATH.
-/path/to/hermes/.venv/bin/python -m unittest discover -s nowledge-mem-hermes/personal_tests -p 'test_r3_provider.py' -v
-PYTHONPATH=/path/to/hermes /path/to/hermes/.venv/bin/python -m unittest discover -s nowledge-mem-hermes/personal_tests -p 'test_r3_thread.py' -v
+# Run from this repository root; keep the Hermes PM interpreter and canonical runner.
+mkdir -p temp-r3-personal/runner
+for name in test_personal test_security test_r3_provider test_r3_thread; do
+  ln -sfn "$PWD/nowledge-mem-hermes/personal_tests/$name.py" "temp-r3-personal/runner/$name.py"
+done
+HERMES_PYTHON="$PWD/../hermes-secretary/.venv/bin/python" \
+  PYTHONPATH="$PWD/../hermes-secretary" \
+  ../hermes-secretary/scripts/run_tests.sh temp-r3-personal/runner/ -q
 ```
 
-The P1 tests load retained upstream helpers with an ABC fixture. The P3 tests use real Hermes SessionDB, canonical History and MemoryManager egress/background sync with a disposable local HTTP server. Runtime databases live in this checkout's ignored `temp-r3-personal/` tree. They do not access a real profile or NM account. The upstream suite targets the old policy and is retained for reference; the R3 policy is tested separately; old personal helper and Bundle-cache assertions require retirement before running the historical whole-directory suite. See [docs/TEST_REPORT.md](docs/TEST_REPORT.md) for historical baseline evidence only; current R3 status and evidence locations are in the repository root [CLAUDE.md](../CLAUDE.md).
+The ignored source symlinks avoid pytest treating the hyphenated plugin directory as an importable package; each test still resolves its original source location. The canonical runner isolates each file in its own process. The P1 tests load retained upstream helpers with an ABC fixture. The P3 tests use real Hermes SessionDB, canonical History and MemoryManager egress/background sync with a disposable local HTTP server. The maintained personal/security tests cover the current policy and narrow metadata smoke checks. Runtime databases live in this checkout's ignored `temp-r3-personal/` tree; they do not access a real profile or NM account. Other upstream suites are not the personal policy contract. See [docs/TEST_REPORT.md](docs/TEST_REPORT.md) for historical baseline evidence only; actual run versions and coverage are recorded in root [CLAUDE.md](../CLAUDE.md).
 
 公共History由 **EdgarZhong/hermes-secretary** 的新版 `conversation_history` 承担，原生 `session_search` 保留。本插件不monkey-patch Core工具；旧PHASE3的session_search改造计划已撤销。
 
