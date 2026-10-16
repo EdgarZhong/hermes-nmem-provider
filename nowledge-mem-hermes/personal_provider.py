@@ -4,9 +4,9 @@ from __future__ import annotations
 import copy
 import hashlib
 from contextlib import closing
+from datetime import date, datetime
 import json
 import logging
-import math
 import os
 import sqlite3
 import threading
@@ -61,7 +61,29 @@ def _pointer_json(row: dict[str, Any]) -> str:
             .replace("<", "\\u003c").replace(">", "\\u003e").replace("&", "\\u0026"))
 
 
-def candidate_index(result: Any, *, limit: int, budget: int) -> str:
+def _candidate_date(value, *, profile_home):
+    """Project optional dates only; unavailable dates do not invalidate a pointer.
+
+    Date-only evidence stays date-only. Absolute instants use Hermes' native
+    second-precision formatter; naive/invalid values are unavailable, not dates
+    whose timezone can be inferred from the launch process.
+    """
+    if isinstance(value, bool) or not isinstance(value, (str, int, float, datetime)):
+        return None
+    if isinstance(value, str) and len(value) == 10 and value[4] == value[7] == "-":
+        try:
+            date.fromisoformat(value)
+            return value
+        except ValueError:
+            return None
+    from hermes_time import format_timestamp
+    try:
+        return format_timestamp(value, profile_home=profile_home)
+    except (TypeError, ValueError, OverflowError, OSError):
+        return None
+
+
+def candidate_index(result: Any, *, limit: int, budget: int, profile_home=None) -> str:
     """Bounded, JSON-escaped pointers only. Omit whole rows rather than truncate IDs/dates."""
     if not isinstance(result, dict) or result.get("success") is False or result.get("error"):
         raise ValueError("Invalid or failed NM search envelope")
@@ -90,10 +112,8 @@ def candidate_index(result: Any, *, limit: int, budget: int) -> str:
         title = " ".join(title.split())[:160] if isinstance(title, str) else ""
         row = {"id": identity, "title": title or "Untitled"}
         for field in ("created_at", "updated_at"):
-            value = item.get(field)
-            if isinstance(value, str) and value.strip():
-                row[field] = value
-            elif isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value):
+            value = _candidate_date(item.get(field), profile_home=profile_home)
+            if value is not None:
                 row[field] = value
         line = _pointer_json(row)
         if used + len(line) + 1 > budget:
@@ -208,13 +228,13 @@ class PersonalNowledgeMemProvider(NowledgeMemProvider):
             if not scope.context_allowed:
                 return ""
             epoch, client = self._context_epoch, self._recall_client
-            limit, budget = self._recall_limit, self._recall_budget
+            limit, budget, home = self._recall_limit, self._recall_budget, self._home
         # No second minimum-length gate: short CJK can carry meaningful intent.
         # Never interpolate the query into shell commands or the returned context.
         query = " ".join(query.split())[:2048]
         try:
             result = client.search(query, limit=limit)
-            text = candidate_index(result, limit=limit, budget=budget)
+            text = candidate_index(result, limit=limit, budget=budget, profile_home=home)
         except Exception as exc:
             log.warning("Personal NM recall unavailable (%s)", type(exc).__name__)
             text = _RECALL_UNAVAILABLE

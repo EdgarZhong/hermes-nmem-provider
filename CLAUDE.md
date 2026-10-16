@@ -4,13 +4,20 @@
 
 暂无。本轮小脚本两步失败时保留已创建ID、仅修复Metadata是落实用户指定流程的必要工程细化，不是用户另行批准的通用重试系统。
 
+## V51 Recall 时间投影修复（2026-10-17）
+
+- Astra首审发现指针日期直接输出epoch／微秒；仅在candidate_index的可读出口复用Hermes原生秒精度formatter，正式prefetch显式传owner profile。内部来源响应、ID、Bundle正文、资格与网络不改。
+- 合法绝对时刻带时区并秒显示；纯日期保留；无zone或不可解析的可选日期省略，候选和其它正常字段保留，不伪造瞬间。主会话已review两文件及证据指纹接收。
+- 定向RED后8顶层节点＋17子用例PASS；Ruff、C901≤20及diff检查通过。未重跑46／39整组；统一最终回归的46项canonical补证已通过，日志在公共final-regression。
+- 本包不操作round3或真实NM。首轮独立Verification尚未通过；新版本待全范围独立复审。报告见公共c10-personal-report.md §8，完整证据temp-r3-personal/evidence/v51/manifest.json。
+
 ## C11-P 正式接线开发取证完成（2026-10-17）
 
 - 公共生产版本 `f66a8f80b4bab39b0a785a552019c91a6e9becba`，个人 `8682ff858a56ac735098ee6289d4ab547d3ae755`；主会话已review接收六场景正式原生host→loopback fixture→真实DeepSeek证据。
 - 统一round3隔离profile；12个completed Main Turns、14次实际Main请求。短CJK Recall、503当前输入诚实反馈且History仍可用、同Turn稳定root、有效root冷恢复、真正成功压缩后fresh Bundle均有实际证据。24条UA正文映射真实UID，同Ref／Thread只追加suffix，明确ACK与收据前缀完全一致。
 - 两次summary-would-grow no-op如实保留；只有最后26→10消息／30,358→21,126 tokens计成功。未改生产或tests，未访问真实NM、重测P2或执行部署。
 - 原配置原bytes已恢复，插件恢复为原不存在；自有gateway／driver／fixture进程均停止，归档ACK完整、lease为0，round3已释放。准备驱动未独立保存native子进程退出码，不宣称该码0；driver退出0，最终显式close未发出但stop关闭stdin并等待退出。
-- 完整报告：公共 `.autonomous/20261016-round3-secretary-nm/personal-host-report.md`；ignored证据：`temp-r3-personal/evidence/c11-p/manifest.json`。下一步统一Verification与canonical 46项补证；39项既有有效测试复用。独立门禁尚未通过，真实NM服务及云部署仍后置。
+- 完整报告：公共 `.autonomous/20261016-round3-secretary-nm/personal-host-report.md`；ignored证据：`temp-r3-personal/evidence/c11-p/manifest.json`。统一Verification已初审；canonical 46项补证已通过，39项既有有效测试复用。独立门禁尚未通过，真实NM服务及云部署仍后置。
 
 ## C10-P 个人旧测试收口（2026-10-17）
 
