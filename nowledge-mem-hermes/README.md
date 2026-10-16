@@ -16,7 +16,7 @@ Notebook/Noting owns the current Conversation's working state. NM owns durable p
 
 ## Install from this fork
 
-Use Python from your Hermes environment (`PyYAML` is required by the installer). Do not run the upstream curl installer, which would replace this fork with upstream policy.
+Use Python from your Hermes environment (the host's locked `ruamel.yaml` is used by the installer). Do not run the upstream curl installer, which would replace this fork with upstream policy.
 
 ```bash
 git clone https://github.com/EdgarZhong/hermes-nmem-provider.git
@@ -55,7 +55,7 @@ Connection credentials and URL stay in the normal `nmem` client configuration. N
 
 Existing `space_by_identity`, `space_template`, `NMEM_SPACE` and legacy `NMEM_SPACE_ID` resolution are retained. Leave `space` out to use the existing ambient fallback; an explicit empty `space` uses the NM default. The API connection URL must be the usable NM API base, not a website login URL.
 
-`system_prompt_block()` requests `/context/bundle?include_working_memory=false` and never falls back to `wm read`. Bundle contents are frozen per logical Conversation in the provider instance; a reset or new instance can obtain a fresh Bundle at the host's next actual root-prompt build. Noting may inherit the parent's already-frozen prompt under the existing cache-parity contract; it does not independently run this Provider.
+`system_prompt_block()` requests `/context/bundle?include_working_memory=false` and never falls back to `wm read`. Each native root-prompt build or actual rebuild fetches the Bundle once; the host owns assembled-root caching/restoration. The Provider adds no per-Thread cache that could outlive a compression rebuild. Noting may inherit the parent's already-frozen prompt under the existing cache-parity contract; it does not independently run this Provider.
 
 `prefetch()` performs normal `nmem --json m search`, including short Chinese queries. It returns only intact IDs, titles and available dates, plus a context-sufficiency reminder. It does not inject full Memory bodies, reuse stale query results, or report candidates as memories already read. Host trivial-prompt skipping and historical `api_content` replay are unchanged.
 
@@ -67,56 +67,58 @@ Interactive Secretary sessions use a **read-only** existing `secretary_session_b
 
 Only user/assistant prose and normalized timestamps are archived. Tool results, hidden/Noting scaffolding and recognized compaction summaries are excluded. This is **not a full tool/multimodal execution trace**. Hermes `state.db` remains authoritative and must be backed up.
 
-Acknowledged transcript fingerprints are stored under `$HERMES_HOME/nowledge-mem-personal/receipts.sqlite3`; no transcript bodies or credentials are stored there. Successful acknowledgements advance the cursor. Failures leave it unchanged; subsequent turns/session-end or resuming the conversation retry. HTTP timeout after server commit can still cause an at-least-once retry; server append deduplication is reused, and exactly-once delivery is not claimed.
+Acknowledged transcript fingerprints are stored under `$HERMES_HOME/nowledge-mem-personal/receipts.sqlite3`; no transcript bodies or credentials are stored there. Only an affirmative JSON success acknowledgement advances the cursor; malformed, ambiguous, negative or mismatched Thread responses leave it unchanged. A subsequent completed turn retries. Session-end only retries the last snapshot already admitted by the completed-turn hook; it never admits an interrupted closing tail. Resuming retries at the next completed turn. HTTP timeout after server commit can still cause an at-least-once retry; append requests retain the existing deduplicate flag; actual server deduplication has not been verified, and exactly-once delivery is not claimed.
 
-An edit/rewind that changes an already-archived prefix is deliberately **not silently appended or overwritten**. Sync logs a reconciliation-required failure; explicit archive reconciliation is a deployment operation, not yet implemented here. Unsupported combined summary/user carriers on non-Secretary hosts are not claimed lossless. Scope failures deny that observation rather than guess. Independent cron sync is allowed, but cron children remain excluded.
+An edit/rewind that changes an already-archived prefix is deliberately **not silently appended or overwritten**. Sync returns and logs reconciliation-required; explicit archive reconciliation is a deployment operation, not yet implemented here. Unsupported combined summary/user carriers on non-Secretary hosts are not claimed lossless. Scope failures deny that observation rather than guess. Independent cron sync is allowed, but cron children remain excluded.
 
-## 现有旧helper：Hermes Provenance in Memory metadata
+## Approved Memory creation and exact provenance
 
-此节描述尚未替换的代码。第三轮目标为官方CLI创建后仅补写Metadata，见[PHASE3现行§4.1](docs/PHASE3.md)；不据以下旧命令继承完整写入协议。
-
-Use `metadata.hermes_provenance`, not prose suffixes or NM-native Thread fields:
+Normal reading, editing and management use official `nmem`. The narrow helper
+creates through official CLI, takes its actual returned ID, then attaches only
+`metadata.hermes_provenance` to that same Memory. Main supplies approved natural
+language content, native `notebook:<type>` labels and exact sources. Read original
+evidence with `conversation_history`; candidate titles and NM Threads are not the
+originals. `/propose-persistence`, a capacity notice or `--apply` is not approval.
 
 ```json
-{
-  "id": "an-explicit-retry-stable-memory-id",
-  "title": "Approved decision",
-  "content": "The actual durable knowledge, without provenance identifiers.",
-  "source": "hermes-secretary",
-  "metadata": {
-    "hermes_provenance": {
-      "version": 1,
-      "sources": [
-        {"conversation_ref": "<exact host value>", "message_uid": "<exact host value>"}
-      ]
-    }
-  }
-}
+{"version":1,"sources":[{"conversation_ref":"<actual Ref>","message_uid":"<actual UID>"}]}
 ```
-
-The values above are placeholders, not valid evidence. Use IDs returned by the host History tools. `personal_cli.py` is a shell command, not a registered Agent function:
 
 ```bash
-# No network write; only validate and preview the payload.
-python3 "$HERMES_HOME/plugins/nowledge-mem/personal_cli.py" write --input approved-memory.json
-# After the existing Secretary approval, using Hermes' Python environment:
-python3 "$HERMES_HOME/plugins/nowledge-mem/personal_cli.py" write --input approved-memory.json \
-  --history-home "$HERMES_HOME" --apply
-# Read metadata plus an edit precondition digest:
-python3 "$HERMES_HOME/plugins/nowledge-mem/personal_cli.py" read MEMORY_ID
-# Explicit update also requires --update --expected-sha DIGEST.
+# Preview: no CLI/network calls.
+python3 "$HERMES_HOME/plugins/nowledge-mem/personal_cli.py" create \
+  --content-file approved.md --provenance-file provenance.json \
+  --title 'Approved understanding' --label 'notebook:situation'
+# Execute the specific approved content/destination by adding --apply.
+# If creation succeeded but attachment failed, use the returned actual ID:
+python3 "$HERMES_HOME/plugins/nowledge-mem/personal_cli.py" attach ACTUAL_ID \
+  --provenance-file provenance.json --apply
 ```
 
-Applied writes verify all source UIDs against the indicated Secretary History Foreground, preserve unrelated metadata on updates, and read back content/metadata. A stable ID is required; creates refuse an existing ID. Failed readback reports an ambiguous write and does not automatically repeat it. PATCH preconditions are client-side stale-read detection, **not server-atomic compare-and-swap**. Only use this helper under the intended single-writer policy.
-
-`--apply` is **not** user-authentication or an approval capability. A model with unrestricted shell and NM write credentials can bypass prompts; enforce hard isolation outside this helper when needed. The helper verifies source existence, not whether the prose logically follows from the source; the main conversation remains responsible for that review.
+Connection uses the running host's existing NM configuration. A one-off
+`--api-url` comes before `create`/`attach` and is shared by CLI and Metadata HTTP;
+use the same destination during repair. Credentials never enter command arguments
+or diagnostics. Metadata attachment preserves unrelated fields from its read.
+These two steps are not atomic: `partial` retains the created ID, while
+`creation_unknown` must be investigated through official CLI before any new write.
+Repair never creates again. The previous `read`/`write`/expected-SHA/History
+membership protocol is removed. See the installed [nm-cli skill](skills/nm-cli/SKILL.md)
+for exact statuses and the small-script basic-check boundary.
 
 ## Tests and boundaries
 
 ```bash
-python3 -m unittest discover -s nowledge-mem-hermes/personal_tests -v
+# Use the Hermes PM interpreter; Thread integration needs Hermes on PYTHONPATH.
+/path/to/hermes/.venv/bin/python -m unittest discover -s nowledge-mem-hermes/personal_tests -p 'test_r3_provider.py' -v
+PYTHONPATH=/path/to/hermes /path/to/hermes/.venv/bin/python -m unittest discover -s nowledge-mem-hermes/personal_tests -p 'test_r3_thread.py' -v
 ```
 
-These tests load the retained upstream Provider/client helpers with a minimal Hermes ABC fixture, and use fake NM clients plus a disposable local HTTP server. They do not access a real profile or NM account. The upstream suite targets the old policy and is retained for reference; the new policy is tested separately. See [docs/TEST_REPORT.md](docs/TEST_REPORT.md) for actual execution evidence and remaining live acceptance.
+The P1 tests load retained upstream helpers with an ABC fixture. The P3 tests use real Hermes SessionDB, canonical History and MemoryManager egress/background sync with a disposable local HTTP server. Runtime databases live in this checkout's ignored `temp-r3-personal/` tree. They do not access a real profile or NM account. The upstream suite targets the old policy and is retained for reference; the R3 policy is tested separately; old personal helper and Bundle-cache assertions require retirement before running the historical whole-directory suite. See [docs/TEST_REPORT.md](docs/TEST_REPORT.md) for historical baseline evidence only; current R3 status and evidence locations are in the repository root [CLAUDE.md](../CLAUDE.md).
 
 公共History由 **EdgarZhong/hermes-secretary** 的新版 `conversation_history` 承担，原生 `session_search` 保留。本插件不monkey-patch Core工具；旧PHASE3的session_search改造计划已撤销。
+
+Real NM writes, real server ACK/deduplication and cloud deployment remain unverified
+and unauthorized in this round. An ordinary host run may auto-sync Threads; always
+select a local fixture endpoint before isolated development, never a real account
+for a supposedly read-only trial. The native finalizer must admit only completed,
+uninterrupted, nonfailed turns; public host verdict wiring belongs to Secretary.

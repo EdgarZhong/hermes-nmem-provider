@@ -10,7 +10,7 @@
 | 协作规则与开发闭环 | [AGENTS.md](AGENTS.md) |
 | 历史版本测试证据 | [TEST_REPORT.md](nowledge-mem-hermes/docs/TEST_REPORT.md) |
 
-目录：`personal_*.py`承载个人策略，`client.py`／`provider.py`保留上游辅助能力，`personal_tests/`为隔离测试，`docs/`存规格和报告。既有测试入口为 `python3 -m unittest discover -s nowledge-mem-hermes/personal_tests -v`，使用模拟NM客户端／本地HTTP服务，不代表真实NM联调。现有安装入口为 `install_personal.py`；安装和部署需按当前任务授权执行。
+目录：`personal_*.py`承载个人策略，`client.py`／`provider.py`保留上游辅助能力，`personal_tests/`为隔离测试，`docs/`存规格和报告。第三轮测试入口为 `PYTHONPATH=../hermes-secretary ../hermes-secretary/.venv/bin/python -m unittest discover -s nowledge-mem-hermes/personal_tests -p "test_r3_*.py" -v`，复用并列 Secretary 官方 PM 环境，使用模拟NM客户端／本地HTTP服务，不代表真实NM联调。历史测试的旧契约处置进度见 CLAUDE.md。现有安装入口为 `install_personal.py`；安装和部署需按当前任务授权执行。
 
 下方保留上游Community目录与资料导航；不是个人Provider的行为、安装或发布要求。个人行为以本仓库上述入口为准。
 

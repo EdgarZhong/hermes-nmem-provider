@@ -25,7 +25,8 @@ class PersonalMemClient(NowledgeMemClient):
             raise ValueError("Expected relative NM API path")
         base = self._api_url().rstrip("/")
         parts = parse.urlsplit(base)
-        if parts.scheme not in {"http", "https"} or not parts.netloc or parts.username or parts.password:
+        if (parts.scheme not in {"http", "https"} or not parts.netloc or parts.username
+                or parts.password or parts.query or parts.fragment):
             raise ValueError("Invalid NM API URL")
         body = None if payload is None else json.dumps(payload, ensure_ascii=False).encode("utf-8")
         headers = {"Accept": "application/json", "Content-Type": "application/json"}
@@ -57,6 +58,28 @@ class PersonalMemClient(NowledgeMemClient):
         if self._has_explicit_space and self._space:
             params["space_id"] = self._space
         return self.request_json("GET", "/context/bundle?" + parse.urlencode(params))
+
+    def search(self, query="", *, limit=10, filter_labels=None, mode=None, min_importance=None):
+        """Reuse official CLI/config/timeout handling; the query is one literal argument.
+
+        Terminate option parsing before untrusted text, including dash-prefixed input.
+        This is Memory Search, not NM ask or an LLM query-planning operation.
+        """
+        if not isinstance(query, str):
+            raise ValueError("NM search query must be text")
+        if not query:
+            return {"memories": []}
+        cmd = ["m", "search"]
+        if limit != 10:
+            cmd.extend(["-n", str(limit)])
+        for label in filter_labels or []:
+            cmd.extend(["-l", label])
+        if mode == "deep":
+            cmd.extend(["--mode", "deep"])
+        if min_importance is not None:
+            cmd.extend(["--importance", str(min_importance)])
+        cmd.extend(["--", query])
+        return self._cli(cmd)
 
     def memory_get(self, memory_id: str) -> dict:
         result = self.request_json("GET", "/memories/" + parse.quote(memory_id, safe=""))

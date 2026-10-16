@@ -14,20 +14,24 @@ FILES = ("__init__.py", "plugin.yaml", "provider.py", "client.py", "skill_outcom
          "personal_provider.py", "personal_client.py", "personal_scope.py", "personal_cli.py")
 
 
+def _yaml():
+    # Use the host's locked YAML implementation, not an undeclared PyYAML install.
+    from ruamel.yaml import YAML
+    yaml = YAML(typ="safe")
+    yaml.version = (1, 1)
+    yaml.sort_base_mapping_type_on_output = False
+    yaml.allow_duplicate_keys = False
+    yaml.default_flow_style = False
+    yaml.allow_unicode = True
+    return yaml
+
+
 def load_config(text):
-    import yaml
-    class UniqueLoader(yaml.SafeLoader):
-        pass
-    def unique(loader, node, deep=False):
-        result = {}
-        for key_node, value_node in node.value:
-            key = loader.construct_object(key_node, deep=deep)
-            if key in result:
-                raise ValueError(f"Duplicate configuration key: {key}")
-            result[key] = loader.construct_object(value_node, deep=deep)
-        return result
-    UniqueLoader.add_constructor(yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG, unique)
-    value = yaml.load(text, Loader=UniqueLoader) if text.strip() else {}
+    from ruamel.yaml.error import YAMLError
+    try:
+        value = _yaml().load(text) if text.strip() else {}
+    except YAMLError:
+        raise ValueError("Invalid or duplicate Hermes configuration keys") from None
     if not isinstance(value, dict):
         raise ValueError("Hermes config must be an object")
     memory = value.get("memory", {})
@@ -40,7 +44,6 @@ def load_config(text):
 
 
 def install(home: Path, *, apply=False, source=None):
-    import yaml
     home = home.expanduser().resolve()
     if home == Path(home.anchor):
         raise ValueError("Refusing filesystem-root Hermes home")
@@ -48,6 +51,8 @@ def install(home: Path, *, apply=False, source=None):
     for name in FILES:
         if not (source / name).is_file():
             raise ValueError(f"Incomplete plugin checkout: {name}")
+    if not (source / "skills" / "nm-cli" / "SKILL.md").is_file():
+        raise ValueError("Incomplete plugin checkout: nm-cli skill")
     config_path = home / "config.yaml"
     text = config_path.read_text(encoding="utf-8") if config_path.exists() else ""
     config = load_config(text)
@@ -70,7 +75,8 @@ def install(home: Path, *, apply=False, source=None):
         for name in FILES:
             shutil.copy2(source / name, stage / name)
         shutil.copytree(source / "skills", stage / "skills")
-        tmp_config.write_text(yaml.safe_dump(config, allow_unicode=True, sort_keys=False), encoding="utf-8")
+        with tmp_config.open("w", encoding="utf-8") as handle:
+            _yaml().dump(config, handle)
         os.chmod(tmp_config, 0o600)
         if target.exists():
             target.rename(previous)
