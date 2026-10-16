@@ -1,3 +1,21 @@
+# 个人 Provider 协作规则
+
+- 永远用中文答复；项目AGENTS.md、CLAUDE.md使用中文。运行命令和修改前说明意图，每个新会话先读本文件和CLAUDE.md。
+- README只记稳定事实与入口，AGENTS只记规则，CLAUDE维护动态任务；专项规格使用现有docs。用户确认的口径立即同步，非必要不创建文档，不查看归档原文。
+- 个人工作仅修改nowledge-mem-hermes及必要根文档；不改其他集成、发布注册或用户运行配置。不将个人NM依赖加入公开Secretary核心。
+- 目标设计查nowledge-mem-hermes/docs/PHASE3.md现行§1–7；其历史附录与上游指南仅作参考，不能新增、覆盖已冻结要求或门禁。History由独立Secretary核心实现，本插件不monkey-patch。
+- 保留单一Provider和已有helper边界。凭据不进入Git、日志或文档；复用运行主机NM配置，不复制开发机配置。未获明确授权不写真实NM数据、不改治理政策。
+- 开发闭环：读现行依据→检查工作区并保护已有修改→更新CLAUDE并说明意图→最小修改→按影响做必要检查→亲自review→同步文档和阶段提交。纯文档只检查差异、引用及一致性，不启动产品测试。具体轮次的用户验收例外以轮次索引为准。
+- 提交仅包含任务授权内容。沿用户提交后自动同步规则，保留已有hook，安装主仓库.githooks/post-commit到本仓库实际hooks路径；不强推、不自动合并。代码同步不代表部署或验收通过。
+- 自主轮次按autonomous-run套件；当前轮次索引与冻结版本位于并列hermes-secretary仓库.autonomous目录，入口由CLAUDE记录。不得借上游发布约定扩张任务。
+
+## 上游规则历史参考
+
+以下内容保留供理解原仓库，不是本个人fork的新增发布、验收或行为要求；冲突时以上规则和用户冻结规格优先。
+
+<details>
+<summary>上游Community参考</summary>
+
 # Nowledge Community — Agent Guidelines
 
 ## Registry
@@ -87,3 +105,5 @@ linked as an external fallback for old cache-only sessions.
 When modifying this repo as a submodule of the parent `muscat` repo:
 1. Commit inside `community/` first
 2. Then stage the updated submodule reference in the parent repo
+
+</details>

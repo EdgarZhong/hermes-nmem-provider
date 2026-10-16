@@ -1,3 +1,21 @@
+# Hermes NM Provider 个人仓库
+
+本仓库是 `EdgarZhong/hermes-nmem-provider`，保留 Nowledge Community 源码布局；个人 Hermes 集中在 `nowledge-mem-hermes/`。它与公开 Secretary 核心分仓维护。现有插件代码与目标设计的差异见 `CLAUDE.md`，不能把规格当成运行事实。
+
+| 内容 | 文件路径 |
+|---|---|
+| 个人NM设计与接口边界 | [PHASE3.md](nowledge-mem-hermes/docs/PHASE3.md)（上半部§1–7；下半部历史参考） |
+| 已有插件结构、安装入口与本地测试命令 | [插件README](nowledge-mem-hermes/README.md) |
+| 当前进度、验收边界与交接 | [CLAUDE.md](CLAUDE.md) |
+| 协作规则与开发闭环 | [AGENTS.md](AGENTS.md) |
+| 历史版本测试证据 | [TEST_REPORT.md](nowledge-mem-hermes/docs/TEST_REPORT.md) |
+
+目录：`personal_*.py`承载个人策略，`client.py`／`provider.py`保留上游辅助能力，`personal_tests/`为隔离测试，`docs/`存规格和报告。既有测试入口为 `python3 -m unittest discover -s nowledge-mem-hermes/personal_tests -v`，使用模拟NM客户端／本地HTTP服务，不代表真实NM联调。现有安装入口为 `install_personal.py`；安装和部署需按当前任务授权执行。
+
+下方保留上游Community目录与资料导航；不是个人Provider的行为、安装或发布要求。个人行为以本仓库上述入口为准。
+
+---
+
 # Nowledge Community
 
 <div align="center">

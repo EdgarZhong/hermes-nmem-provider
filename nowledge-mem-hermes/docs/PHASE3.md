@@ -1,3 +1,187 @@
+# Personal Hermes · Nowledge Mem 个人接入设计
+
+> **2026-10-16／独立个人设计文档／未在本轮实施。** 从下载目录 `Hermes-Secretary-Conversation-History-and-NM-Memory-Standalone-Design.md` 拆分，按新 Secretary 白板及 07 的通用交接流程修正旧口径。
+>
+> **第三轮实施范围（用户确认）：** 个人NM接入与Secretary改版共同纳入第三轮自主实现规划、正式接线及验收；本文为个人工作线依据，实施在独立个人分支或Provider仓库。界面修改后置。文档冻结不等于已完成接入；源码已承接到独立Provider仓库，配置与运行证据仍待实施阶段取得。
+
+> **2026-10-16 ask-and-align最新修订（用户明确）：** Hermes provenance写入NM Memory是必须保留的能力。取消该自定义字段的短暂决定已撤销。旧`personal_cli.py`直接调用API创建／编辑Memory的方案改为窄职责脚本：官方`nmem` CLI创建Memory → 取得真实返回主键 → 仅补写Hermes Metadata。端点、密钥与远程选择复用运行所在主机的NM配置，无第二套配置。Hermes正式运行／部署目标为云端；本次只完成文档冻结后暂停，不实施脚本或部署。
+
+> **验收与部署边界（用户再次确认）：** 第三轮在本机隔离环境完成验收，以后部署云端；本地checkout与测试不代表正式运行位置，不宣称本轮已验证云端部署。真实服务测试数据写入仍须按本轮索引明确授权，不将一般实现授权解释为修改已有个人Memory或治理配置。
+>
+> 本文供用户自己的 Hermes / NM Provider 使用，不进入公开 Secretary 规格，不使 NM 成为 Secretary 的依赖。Provider 实现应在个人分支或独立 Provider 仓库维护。本文的“来源稿观察”来自原稿记录，本轮已核实Provider checkout，但未访问NM服务；不能当作当前部署验收。
+>
+> 公共 Conversation History 的工具与管理设计已移入 `/Users/edgar/code/hermes-secretary/docs/07-scheduler-notebook-noting-compaction-redesign.md`。本文只引用规范地址及授权边界，不再复制另一套 History Schema。原合并稿保留作研究来源，其旧三类 Candidate、Memo／Schedule 职责和旧 History 提示不再作为新实现要求。
+
+> 验收边界补充（2026-10-16，用户明确）：provenance小脚本不设独立严格验收，不安排真实NM测试写入；实施只做基本检查，实际联通问题留到以后云端部署处理。此例外仅限该小脚本，不取消provenance保存能力，也不扩展为其他Provider功能免验。Provider自动Thread归档的真实NM写入测试尚未获授权，本次不执行任何NM写入。
+
+## 1. 职责与术语
+
+| 对象 | 所属层与边界 |
+|---|---|
+| Conversation 内部记忆 | Active 上下文、Compact Message、原始历史、Notebook、Candidates；公开 Secretary 负责连续性、索引及获批交接流程 |
+| NM Memory | 用户选定的会话外记忆目标；个人情况、关系、经历、认知与工作成果均可进入，不限于规则或技能 |
+| NM Context Bundle | NM 管理的稳定 Personal Premise、agent、Space、Policy 等；排除 NM Working Memory |
+| NM recall candidates | 每次合格输入前检索的轻量 Memory 指针，不是 Notebook Persistence Candidates，也不是已读取的事实 |
+| NM Thread | 合格对话正文的归档副本；不是 Hermes 原始证据、Conversation 身份或自动生成的 Memory |
+| Hermes Profile | 当前 Hermes home、配置和 state.db 的归属域；不等同于 NM Space/Profile/Policy |
+| 规范来源 | `(conversation_ref, message_uid)`；fork 中同 UID 需 Ref 区分，物理 Session/row ID、Thread ID不替代它 |
+
+Conversation 内部内容可以保存很久，也不覆盖用户在其他工具中的所有短期信息；NM 自己可以区分长短期。本文不以保存时长定义两个系统的权限。
+
+Secretary 只负责提供可交付的内容标签与 provenance。目标是否保存、如何治理／召回，由目标决定。**本文为个人NM明确要求将Hermes provenance保存到Memory Metadata；个人适配的接线不能反过来成为公开Secretary的交付成功条件。** Noting只能看Main Conversation的批准与真实分发轨迹，不访问NM或文件审核保管质量。旧helper的来源存在性校验、fresh digest与通用写后回读体系不再作为本轮新增写入流程要求。
+
+## 2. 单一 Provider 接入与开关
+
+来源稿记录的设计：定制官方 Hermes NM Memory Provider，复用既有 `system_prompt()`、`prefetch()`、`sync_turn()` hooks。`get_tool_schemas()` 返回空数组；`queue_prefetch()` no-op，`sync_turn()` 仍工作。Main 用已有 terminal 中的 nmem CLI；不另建 `nmem_*` 模型工具、MCP、记忆 Agent Loop、召回 Agent、后台治理器或第二个同步插件。
+
+```yaml
+memory:
+  provider: nowledge-mem
+  memory_enabled: false
+  user_profile_enabled: false
+```
+
+这两个false仅关闭原生Markdown记忆／用户资料作为活跃来源；不删除、不迁移已有 MEMORY.md/USER.md，不禁用外部Provider。不要未经检查禁用整个memory toolset：host可能以其控制Provider提示注入。SOUL、Skills及Core指令保持各自职责。配置描述目标，不代表每个正在运行的profile已这样设置。
+
+| runtime | 独立Bundle | 输入前Recall | 完成Turn归档 |
+|---|---|---|---|
+| 真实用户Main | 是 | host准入的有意义输入 | 是 |
+| 有效压缩续接后的同Main | 沿同Conversation及原生重建生命周期 | 同上 | 同Conversation Thread |
+| 独立Cron Session | 否 | 否 | 是，独立物理Session Thread |
+| Noting Child | 不独立抓取，可继承冻结父前缀 | 否 | 否 |
+| delegate/review/utility/未知来源 | 否 | 否 | 否 |
+
+资格使用真实origin/source/parent/delegate及只读Secretary绑定判断；Cron里的user角色或存在一个Ref都不是用户Main资格。NM故障不能关闭公共History，Noting开关也不能控制NM资格。不得为证明资格写入新的Conversation或跨Profile扫描。
+
+## 3. 稳定Bundle与输入前Recall
+
+### 3.1 稳定内容
+
+Provider向合格Main贡献一份Global Rule＋NM Context Bundle，调用时`include_working_memory=false`。Bundle跟随原生prompt构造、恢复和压缩重建生命周期，不每次请求／Turn重新抓取并改root；NM策略更改不静默重写已有冻结前缀。离线或Bundle非法时明确不可用，不用Working Memory或猜测背景补位。
+
+### 3.2 动态指针
+
+有意义的新用户输入经原有prefetch hook发起NM Memory Search，不调用NM ask推理接口，不增加LLM预检索。默认参数沿来源稿：
+
+```json
+{"timeout":8,"recall_timeout":2,"recall_limit":5,"recall_max_chars":2400,"space":"","agent_identity":""}
+```
+
+这是Provider网络和检索输出边界，不是Notebook写作预算。指针含完整Memory ID、标题和可得创建／更新时间，无正文、虚构置信度或截断ID。标题和查询文本按不可信数据编码。host trivial gate可能跳过图片-only或简单输入；短CJK不能因旧最小查询长度被一概排除。
+
+失败时不展示过时指针，简短说明检索不可用并保留以下提醒；空结果不证明没有相关记忆。读指针不能报告为“已读N条记忆”。Turn结束不额外预热新查询。
+
+**载体限制：** Hermes可能将prefetch写入`api_content`并后续重放。因此每Turn查询不等于内容只存活一Turn；真正临时注入需单独host改造，本轮没有授权或声称解决。
+
+### 3.3 英文指针标题与提醒
+
+```text
+NM candidates (references only; use CLI to read):
+```
+
+```text
+Memory check: assess whether the current conversation already supplies sufficient context. Read useful candidates with nmem CLI, or search for missing personal background when needed. Skip unnecessary lookup; candidate titles are not verified facts.
+```
+
+Main先判断已有对话和Notebook是否够用；确实缺个人背景才读相关ID或另搜。讨论“原来到底说了什么”应沿公共conversation_history读原始证据，不把NM摘要或Thread归档当真原文。不开每轮强制CLI调用。
+
+## 4. 个人写入适配：公共提案流程＋NM约束
+
+通用链路由白板／07决定：Notebook现行条目或原文→聚合Candidate→Main回读并提出具体内容／目标→用户明确批准→Main执行→正常Conversation留下结果→后续Noting结算。来源条目原位保留；入口包括用户`/propose-persistence`和整理后超限的主动提案指令。二者都只授权提案。
+
+- 个人适配额外检查可能重复／过时／矛盾的NM Memory，必要时提出具体合并或修订；不新增自动定时治理，也不由普通任务消息推导改Personal Premise／Space／Policy的权限。
+- 用户明确批准具体内容与目标后才能调用写入能力；候选、草稿、讨论、沉默、命令、容量提示都不是写入批准。CLI／API可用和可写凭据也不构成强制审批门禁。当前约束通过提示与流程保持，不假称已由代码保证用户同意。
+- 交付材料继承Notebook内容标签集合；implicit_gap在候选阶段已并为situation。直接原文无Notebook来源时不伪造继承。个人NM可以额外加入自身标签，不能丢掉来源类型。
+- 标签使用官方CLI已有的标签字段保存为`notebook:<type>`；本机`nmem 0.10.101`的add／update帮助已确认支持label／labels。实际运行主机仍须核对其版本；不为类型标签另造写入接口或复制Metadata字段。
+- 消息来源放custom Metadata `hermes_provenance`，正文保持自然语言。Memory可引用多个Conversation。来源位于合法路径不等于它支持该陈述，Main仍要查看用户限定、后续纠正与反证。
+
+```json
+{
+  "id":"actual-memory-id-returned-by-official-cli",
+  "title":"Approved personal understanding",
+  "content":"The approved content, with its actual uncertainty and scope.",
+  "source":"hermes-secretary",
+  "metadata":{
+    "hermes_provenance":{
+      "version":1,
+      "sources":[{"conversation_ref":"conv_example","message_uid":"uid_example"}]
+    }
+  }
+}
+```
+
+上例展示目标Memory的内容与Metadata关系，不定义新的完整Memory创建API；正文、类型标签等创建参数交官方CLI，脚本随后仅补写`hermes_provenance`。Memory ID必须来自本次真实CLI结果，不使用示例占位符。
+
+时间范围来源在正式提案中通过History定位实际支持消息，再写入本个人Metadata；找不到则不伪造精确来源。这是个人NM证据要求，不强制所有公开目标支持该结构。
+
+### 4.1 官方CLI创建＋小脚本补写Metadata（用户定案，未实施）
+
+用户已明确Hermes是其NM管理者，正常搜索、读取、编辑和管理直接使用官方`nmem` CLI，不重新实现它的完整命令面。只为官方CLI当前未暴露的任意Metadata写入增加一个窄职责脚本：
+
+1. Main根据已批准材料撰写Memory正文，并提供准确的`conversation_ref`／`message_uid`来源。脚本不从Candidate自动猜来源，不代替Main重写正文，也不承诺省去模型提供这些ID。
+2. 脚本调用官方`nmem --json m add`创建Memory，沿用官方参数及创建语义，解析成功结果中的真实Memory主键；不自行以HTTP POST创建Memory，不复刻完整CLI参数／编辑能力。
+3. 取得确定主键后，针对同一Memory补写`metadata.hermes_provenance`，保留无关Metadata。Hermes身份不得填入NM原生Thread／Message来源字段冒充另一种身份。
+4. 官方CLI与Metadata请求复用运行主机同一份NM连接配置及有效覆盖规则（端点、密钥与远程选择），不得各自落到不同服务，不添加第二份脚本连接配置。云端运行时读取云端运行用户的配置，不依赖开发Mac的路径或凭据。
+5. 两步不是原子事务：创建失败／结果未知时不猜主键、不盲重建；创建成功但Metadata补写失败时明确报告已创建ID和未完成步骤，后续仅对该ID修复补写，不再次创建同一记忆，不把半完成报告为全部成功。
+
+第5项是落实指定两步流程所需的失败处理，不构成新审批、自动治理或通用重试框架。现有`personal_cli.py`的直接HTTP创建／修改正文、强制本地History成员校验、expected-sha更新协议与完整写后回读流程不作为新版写入路线继承；代码取舍在恢复实施后处理，本次不改产品代码。实现时核对官方JSON返回及Metadata更新语义；当前只检查过CLI帮助和已有源码，没有真实创建Memory取证。
+
+### 4.2 结算与责任终点
+
+Main把获批范围、工具实际执行成功／部分／失败／未知写在正常轨迹中；Noting只据此结算成功分发覆盖，不再次访问NM、不要求它证明Metadata保管质量。个人Main若依据自身适配发现写入问题，应在对话中如实报告；不能把“拒绝／撤回”伪成已分发。已退出Notebook的内容由NM负责以后召回，不另设Notebook旧快照找回通道。
+
+## 5. 已完成Turn的NM Thread归档
+
+沿既有completed且未中断Turn同步hook；只归档合格User/Assistant正文和时间，不含tool payload、模型专用注入。Main取合法跨压缩History Foreground，经host现有egress redaction；Cron取自己的物理执行正文（已按host规则处理），不因此成为用户Conversation。Noting／其他child不独立sync。
+
+Thread key使用`hermes-personal-<identity>`：合格Main用conversation_ref；独立Cron／普通原生fallback用physical session_id。new/reset/fork分开，合法compaction continuation保持同Thread。Thread locator不能代替Hermes来源地址。
+
+来源稿记录的收据账本：`$HERMES_HOME/nowledge-mem-personal/receipts.sqlite3`，按endpoint、Space、Thread记已明确ACK的prefix fingerprints和同步时间。prefix不变只追加suffix；收到清晰服务端ACK后才推进账本。失败重试是at-least-once尝试，不保证exactly-once，服务端去重须取得真实证据。
+
+rewind/edit/path变化造成已ACK前缀不再一致时，停止并返回reconciliation-required；不自动覆盖、删除或追加到别的Thread。需要由个人接入后续设计明确处理方法。本轮不新增一个归档数据库或偷偷启动蒸馏。
+
+## 6. NM治理政策与独立Global Rule
+
+NM Background Intelligence暂时关闭，直到服务端具备且接入验证两项：G1可持续的每Thread／来源自动蒸馏准入；G2能够沿消息级来源重新读取原始证据、持续修正的治理。没有另一个Dreaming／自动curator绕过它们。Thread归档本身不产生Memory。
+
+以下是对来源稿现有GUIDANCE按新边界校正后的**个人目标英文文案**，不是公开07模块，也未在运行Provider替换：
+
+```text
+# Personal Hermes memory
+NM is this user's selected external personal memory and context provider. Use the nmem CLI through the existing terminal when needed; this provider registers no nmem function tools or MCP server. The Conversation's Notebook manages its own working indexes and Persistence Candidates; it is not NM Working Memory, and external memory is not limited to reusable skills or rules.
+NM Background Intelligence and automatic distillation remain disabled by operator policy. Automatic Thread capture is archival only. The stable Context Bundle excludes NM Working Memory and follows the host's prompt lifecycle; do not independently rewrite owner-governed Personal Premise, Space or Policy.
+Assess whether the current Conversation already provides the needed context. Read useful candidate IDs with nmem CLI or search for missing personal background; do not force a lookup, treat candidate titles as verified facts, or treat an NM summary as the original Conversation evidence.
+Only Main may perform a specific user-approved Memory change through its authorized tools. Follow the Secretary proposal and explicit-approval process, inspect supporting and correcting original messages with conversation_history, and execute only the approved content and destination. A slash command or capacity notice starts a proposal, not a write; CLI access and --apply are not user approval.
+Preserve inherited Notebook content labels using the official CLI label fields, and preserve exact conversation_ref/message_uid sources in metadata.hermes_provenance. Keep opaque source IDs out of the memory body; do not substitute NM Thread IDs or physical Session row IDs. Use the narrow creation helper to call the official nmem CLI, obtain the actual created Memory ID, and then attach the Hermes metadata to that same Memory using the host's existing NM connection configuration. Other memory operations use the official CLI directly. Report creation and metadata attachment outcomes accurately; if attachment fails after creation, retain the returned ID and repair only that attachment rather than creating another Memory. Noting settles from the Conversation's visible dispatch trajectory and does not inspect NM storage.
+Use nmem --json m search QUERY and nmem --json m show ID for reading; consult nmem --help for other supported operations.
+```
+
+静态Rule/Bundle、动态指针、短Reminder分别经原有Provider hook处理，不把NM规则复制进Secretary History/System Prompt，不把每Turn候选塞进永久Bundle。
+
+## 7. 实施前核对与交接
+
+| 接缝 | 个人接入需要确认的事实 |
+|---|---|
+| personal_provider/scope/client | 一套Provider；正确runtime矩阵、Bundle排除Working Memory、失败不污染Main |
+| Hermes memory_provider/memory_manager | toolset gate、prefetch admitted input、api_content实际存活、prompt重建边界、完成Turn及egress规则 |
+| 窄职责创建脚本 / nm-cli skill | 官方CLI创建及真实主键解析、仅补写hermes_provenance、同一运行主机NM配置、类型使用原生标签、两步部分失败不重复创建；不复刻CLI或继承旧helper通用写入协议 |
+| Thread receipt | 明确ACK后推进、prefix divergence停止、重复请求真实服务端行为 |
+| live profile | Hermes正式运行／部署目标为云端；部署时复用实际运行主机的NM配置。仅按明确部署授权改profile；本次文档冻结不部署、不改NM治理设置、不写入Memory |
+
+源码承接基线为`EdgarZhong/hermes-nmem-provider`的`f9733fcb31a0e6f468eabe6419cb76444fe16b30`，本地目录`/Users/edgar/code/hermes-nmem-provider`。本轮未验证NM服务可用性、实时缓存行为、网络延迟或服务端去重；不得把旧测试报告当作当前联调证据。旧PHASE3替换session_search的设想已由公共07的独立conversation_history方案覆盖，不再实施。
+
+后续验收先在本机隔离Hermes环境进行；真实NM写入（含自动Thread归档）尚无本次授权，需要时另行取得，不能用模拟服务结果冒充真实NM验收。小脚本依用户明确例外不安排严格验证或真实写入验收，实际联通问题留待以后云端部署。以上未执行边界不阻碍本次文档冻结，但恢复实施时须按其真实状态安排工作。
+
+
+---
+
+## 历史方案（2026-10-14，保留追溯，不是第三轮并列依据）
+
+以下原文及其中的Target、必须、用户确认仅描述当时版本；第三轮以本文上方§1–7及核心仓库白板／07为准。特别不继承替换原生session_search、旧完整personal_cli写入协议、旧Notebook类型或提示文。历史报告只证明其注明的版本与环境。
+
+<details>
+<summary>展开历史PHASE3原文</summary>
+
 # Personal Hermes / Hermes Secretary — Phase 3 Memory Integration and Cross-Conversation History Specification
 
 > **Status:** Proposed normative **English replacement** of the first Phase 3 draft, prepared 2026-10-14 for the user's review. It consolidates already-confirmed product decisions, inspects the actual Hermes Secretary and NM Provider source, and explicitly labels implementer-level choices. **It is not a declaration that unfinished Core work has shipped, and it does not retroactively amend frozen 02 or 06.**
@@ -1453,3 +1637,4 @@ This is a **specification rewrite and clarification**, not a blanket approval to
 ---
 
 **Final normative invariant:** *NM is the single global personal Memory authority; Secretary's Notebook is the current user Conversation's working state. The single adapted NM Provider supplies stable non-Working-Memory Context Bundle, light Turn-start candidate pointers and selective completed-Turn Thread archival, including independent Cron main Sessions by their physical session_id. Hermes owns the original evidence. `session_history` keeps 02's mandatory user Main / restricted Noting Parent-history contract. `session_search` keeps Hermes's **original tool name, toolset, check_fn, platform configuration, FTS5/CJK/LIKE retrieval algorithm, source visibility, physical-lineage dedup, same-context skip, bounded Browse and Cron demotion**. Only **after native candidate eligibility** does Secretary enhance the output: genuine user Main histories become logical `kind=conversation` groups with canonical (`conversation_ref`,`message_uid`) Provenance, and other natively searchable executions remain `kind=session` with real physical (`session_id`,`message_id`) navigation locators. Search/Browse results are clearly typed and budgeted, with authentic match-centered excerpts; the same tool's exact Read uses the appropriate locator with original source scope. No new search engine, new index, Cron Conversation Ref registration, Noting-dependent fallback, extra tool or arbitrary privilege is authorized. `SESSION_SEARCH_SCHEMA` and `SESSION_SEARCH_GUIDANCE` are copy-exact targets; all Core changes remain **unimplemented** until proven by native-baseline comparative tests. The 02 History/Noting and prompt-cache boundaries remain protected.*
+</details>

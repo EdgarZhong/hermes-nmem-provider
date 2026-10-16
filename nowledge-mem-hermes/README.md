@@ -71,7 +71,9 @@ Acknowledged transcript fingerprints are stored under `$HERMES_HOME/nowledge-mem
 
 An edit/rewind that changes an already-archived prefix is deliberately **not silently appended or overwritten**. Sync logs a reconciliation-required failure; explicit archive reconciliation is a deployment operation, not yet implemented here. Unsupported combined summary/user carriers on non-Secretary hosts are not claimed lossless. Scope failures deny that observation rather than guess. Independent cron sync is allowed, but cron children remain excluded.
 
-## Hermes Provenance in Memory metadata
+## 现有旧helper：Hermes Provenance in Memory metadata
+
+此节描述尚未替换的代码。第三轮目标为官方CLI创建后仅补写Metadata，见[PHASE3现行§4.1](docs/PHASE3.md)；不据以下旧命令继承完整写入协议。
 
 Use `metadata.hermes_provenance`, not prose suffixes or NM-native Thread fields:
 
@@ -117,4 +119,4 @@ python3 -m unittest discover -s nowledge-mem-hermes/personal_tests -v
 
 These tests load the retained upstream Provider/client helpers with a minimal Hermes ABC fixture, and use fake NM clients plus a disposable local HTTP server. They do not access a real profile or NM account. The upstream suite targets the old policy and is retained for reference; the new policy is tested separately. See [docs/TEST_REPORT.md](docs/TEST_REPORT.md) for actual execution evidence and remaining live acceptance.
 
-The agreed `session_search` Conversation-grouping, keyword-centred collapse and exact evidence-read work belongs to **EdgarZhong/hermes-secretary**, not this plugin. This repository records the contract; it does not monkey-patch that Core tool or claim the Core redesign was delivered here.
+公共History由 **EdgarZhong/hermes-secretary** 的新版 `conversation_history` 承担，原生 `session_search` 保留。本插件不monkey-patch Core工具；旧PHASE3的session_search改造计划已撤销。
