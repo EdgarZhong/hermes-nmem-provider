@@ -1,10 +1,29 @@
+# Changelog
+
+## Unreleased — 2026-10-17
+
+- Replace the per-turn long reminder with a short `Memory check: use nmem CLI if needed.`
+  keyword anchor; the detailed recall policy now lives once in the static system prompt.
+- Rename the automatic-recall projection to memory pointers throughout code, tests
+  and current documentation.
+- Add `Active space` system-prompt guidance: one Hermes profile binds to one NM space;
+  cross-space access requires an explicit user request; manual `nmem` commands must pass
+  `--space`.
+- Bind the resolved profile-config space to both HTTP and CLI clients; normalize an
+  unresolved space to an explicit Default so ambient `NMEM_SPACE` cannot leak across
+  profiles. Keep raw resolution in receipt keys for backward compatibility.
+- Add profile ↔ space documented guidance and implementation checklist for the Hermes
+  Secretary main implementer.
+
+---
+
 # Personal Hermes 0.6.0 — 2026-10-14
 
 Fork-only delivery, based on official Hermes Provider 0.5.24. No npm/PyPI/marketplace publication.
 
 - Register one CLI-first policy Provider; retain upstream transport and normalization helpers.
 - Exclude Working Memory; freeze stable Context Bundle; remove proactive-save and nmem tool guidance.
-- Query-centered turn-start candidate pointers, bounded timeout/output; no queue_prefetch.
+- Query-centered turn-start memory pointers, bounded timeout/output; no queue_prefetch.
 - Main + independent cron main Thread capture; deny background/delegate/Noting Sessions.
 - Profile-scoped acknowledgement cursor; retry unacknowledged data; refuse divergent rewritten history.
 - Hermes source identities stored in Memory metadata via preview-first CLI helper with readback verification.

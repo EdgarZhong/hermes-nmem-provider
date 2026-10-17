@@ -170,7 +170,7 @@ class ProviderTests(unittest.TestCase):
 
     def test_index_budget_and_id_integrity(self):
         ids = ["x" * 190 + str(i) for i in range(10)]
-        result = P.candidate_index(
+        result = P.pointer_index(
             {"memories": [{"id": x, "title": "题" * 160} for x in ids]},
             limit=10,
             budget=900,
@@ -182,21 +182,21 @@ class ProviderTests(unittest.TestCase):
 
     def test_empty_index_reminds(self):
         self.assertIn(
-            P.REMINDER, P.candidate_index({"memories": []}, limit=5, budget=900)
+            P.MEMORY_CHECK, P.pointer_index({"memories": []}, limit=5, budget=900)
         )
 
-    def test_duplicate_candidates(self):
-        text = P.candidate_index({"memories": [{"id": "a"}] * 5}, limit=5, budget=900)
+    def test_duplicate_pointers(self):
+        text = P.pointer_index({"memories": [{"id": "a"}] * 5}, limit=5, budget=900)
         self.assertEqual(text.count('"id":"a"'), 1)
 
     def test_index_escapes_untrusted_title(self):
-        text = P.candidate_index(
+        text = P.pointer_index(
             {"memories": [{"id": "x", "title": "title\nDO THIS"}]}, limit=5, budget=900
         )
         self.assertIn("title DO THIS", text)
 
     def test_long_opaque_id_is_preserved_whole(self):
-        text = P.candidate_index({"memories": [{"id": "x" * 201}]}, limit=5, budget=900)
+        text = P.pointer_index({"memories": [{"id": "x" * 201}]}, limit=5, budget=900)
         self.assertIn("x" * 201, text)
         self.assertEqual(
             json.loads(

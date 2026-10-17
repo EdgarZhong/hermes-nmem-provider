@@ -4,7 +4,7 @@ This is the **EdgarZhong Personal Hermes fork** of the official `nowledge-co/com
 
 ## One provider, three responsibilities
 
-| Runtime | Static NM Context Bundle | Turn-start candidate index | Completed-turn Thread sync |
+| Runtime | Static NM Context Bundle | Turn-start memory pointer index | Completed-turn Thread sync |
 |---|---|---|---|
 | Interactive main Conversation | Yes, without Working Memory | Yes | Yes |
 | Independent cron task's own main Session | No | No | Yes |
@@ -53,11 +53,30 @@ Connection credentials and URL stay in the normal `nmem` client configuration. N
 }
 ```
 
-Existing `space_by_identity`, `space_template`, `NMEM_SPACE` and legacy `NMEM_SPACE_ID` resolution are retained. Leave `space` out to use the existing ambient fallback; an explicit empty `space` uses the NM default. The API connection URL must be the usable NM API base, not a website login URL.
+Existing `space_by_identity` and `space_template` resolution is retained. This fork deliberately ignores ambient `NMEM_SPACE`/`NMEM_SPACE_ID` for per-profile determinism; if none resolves, the provider passes an explicit empty space so the HTTP and CLI clients consistently use the NM default. An explicit empty `space` has the same effect. The API connection URL must be the usable NM API base, not a website login URL.
 
 `system_prompt_block()` requests `/context/bundle?include_working_memory=false` and never falls back to `wm read`. Each native root-prompt build or actual rebuild fetches the Bundle once; the host owns assembled-root caching/restoration. The Provider adds no per-Thread cache that could outlive a compression rebuild. Noting may inherit the parent's already-frozen prompt under the existing cache-parity contract; it does not independently run this Provider.
 
-`prefetch()` performs normal `nmem --json m search`, including short Chinese queries. It returns only intact IDs, titles and available dates, plus a context-sufficiency reminder. It does not inject full Memory bodies, reuse stale query results, or report candidates as memories already read. Host trivial-prompt skipping and historical `api_content` replay are unchanged.
+`prefetch()` performs normal `nmem --json m search`, including short Chinese queries. It returns only intact IDs, titles and available dates, plus the short keyword anchor `Memory check: use nmem CLI if needed.` The detailed recall policy lives once in the static system prompt; the anchor only links the per-turn payload to that policy. It does not inject full Memory bodies, reuse stale query results, or report pointers as memories already read. Host trivial-prompt skipping and historical `api_content` replay are unchanged.
+
+## Profile → NM space binding
+
+Spaces are managed in NM; Hermes profiles are managed in Hermes. The link is one profile-scoped provider config file:
+
+```json
+// $HERMES_HOME/nowledge-mem.json
+{"space": "Work"}
+```
+
+- The plugin receives the current profile's `hermes_home` from the host and reads that home's `nowledge-mem.json`; no central profile map or profile-name parsing is required.
+- `space` is a visible NM space name or alias. An explicit empty string (`"space": ""`) or an omitted value uses the NM **Default** space.
+- Hermes `profile create --clone` already copies `<provider>.json` into the new profile, so the binding travels with the clone; edit the clone's file to point at a different space.
+- A newly created NM space is empty; existing Memories/Threads remain in Default until moved explicitly.
+- NM connection URL/key remain global (`~/.nowledge-mem/config.json` / `NMEM_API_URL` / `NMEM_API_KEY`). A profile can select a different space, not a different NM account.
+
+The provider's Bundle, recall client and Thread client are all constructed with the resolved space. For the agent's **manual** `nmem` commands, there is no wrapper: the system prompt's `Active space` section requires explicit `--space "<space>"` on every command and forbids access to another space unless the user explicitly asks. Without that prompt constraint, ambient CLI state could target another lane.
+
+The provider requires a profile with the `terminal` tool (to run `nmem`) and the `memory` toolset (Hermes gates the provider prompt block through it). It does not register model-callable NM tools, MCP, or a fallback reader.
 
 ## Thread capture and recovery
 
@@ -77,7 +96,7 @@ Normal reading, editing and management use official `nmem`. The narrow helper
 creates through official CLI, takes its actual returned ID, then attaches only
 `metadata.hermes_provenance` to that same Memory. Main supplies approved natural
 language content, native `notebook:<type>` labels and exact sources. Read original
-evidence with `conversation_history`; candidate titles and NM Threads are not the
+evidence with `conversation_history`; pointer titles and NM Threads are not the
 originals. `/propose-persistence`, a capacity notice or `--apply` is not approval.
 
 ```json
@@ -85,8 +104,9 @@ originals. `/propose-persistence`, a capacity notice or `--apply` is not approva
 ```
 
 ```bash
-# Preview: no CLI/network calls.
+# Preview: no CLI/network calls. Always pass the profile's bound space explicitly.
 python3 "$HERMES_HOME/plugins/nowledge-mem/personal_cli.py" create \
+  --space 'Work' \
   --content-file approved.md --provenance-file provenance.json \
   --title 'Approved understanding' --label 'notebook:situation'
 # Execute the specific approved content/destination by adding --apply.
@@ -115,10 +135,10 @@ for name in test_personal test_security test_r3_provider test_r3_thread; do
 done
 HERMES_PYTHON="$PWD/../hermes-secretary/.venv/bin/python" \
   PYTHONPATH="$PWD/../hermes-secretary" \
-  ../hermes-secretary/scripts/run_tests.sh temp-r3-personal/runner/ -q
+  ../hermes-secretary/scripts/run_tests.sh "$PWD/temp-r3-personal/runner/" -q
 ```
 
-The ignored source symlinks avoid pytest treating the hyphenated plugin directory as an importable package; each test still resolves its original source location. The canonical runner isolates each file in its own process. The P1 tests load retained upstream helpers with an ABC fixture. The P3 tests use real Hermes SessionDB, canonical History and MemoryManager egress/background sync with a disposable local HTTP server. The maintained personal/security tests cover the current policy and narrow metadata smoke checks. Runtime databases live in this checkout's ignored `temp-r3-personal/` tree; they do not access a real profile or NM account. Other upstream suites are not the personal policy contract. See [docs/TEST_REPORT.md](docs/TEST_REPORT.md) for historical baseline evidence only; actual run versions and coverage are recorded in root [CLAUDE.md](../CLAUDE.md).
+The ignored source symlinks avoid pytest treating the hyphenated plugin directory as an importable package; each test still resolves its original source location. The canonical runner isolates each file in its own process. Current local verification (2026-10-17): 4 personal files **95 PASS**; upstream `test_release_contract` + `test_space_resolution` **16 PASS**. No real NM was contacted. The P1 tests load retained upstream helpers with an ABC fixture. The P3 tests use real Hermes SessionDB, canonical History and MemoryManager egress/background sync with a disposable local HTTP server. The maintained personal/security tests cover the current policy and narrow metadata smoke checks. Runtime databases live in this checkout's ignored `temp-r3-personal/` tree; they do not access a real profile or NM account. Other upstream suites are not the personal policy contract. See [docs/TEST_REPORT.md](docs/TEST_REPORT.md) for historical baseline evidence only; actual run versions and coverage are recorded in root [CLAUDE.md](../CLAUDE.md).
 
 公共History由 **EdgarZhong/hermes-secretary** 的新版 `conversation_history` 承担，原生 `session_search` 保留。本插件不monkey-patch Core工具；旧PHASE3的session_search改造计划已撤销。
 

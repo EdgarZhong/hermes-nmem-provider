@@ -7,14 +7,14 @@ description: Use official nmem for memory management; create approved Memories w
 
 Use this for explicit memory maintenance, not mandatory preflight on every turn.
 Read with `nmem --json m search QUERY -n 5`, then `nmem --json m show ID` when
-needed. Candidate titles are pointers, not verified facts. Read original Hermes
+needed. Pointer titles are references, not verified facts. Read original Hermes
 evidence with `conversation_history` within its authorized scope. Never invent
 or shorten `(conversation_ref, message_uid)` or substitute physical Session/row
 IDs or NM Thread IDs. Main must check corrections and actual support in the
 originals; the helper only checks the supplied provenance's JSON shape.
 
 Only Main executes specifically user-approved content and destination. A
-Candidate, `/propose-persistence`, capacity notice, available credential or
+persistence proposal, `/propose-persistence`, capacity notice, available credential or
 `--apply` is not approval. Preserve inherited content labels as
 `notebook:<type>` through official CLI label fields (map `implicit_gap` to
 `situation`). Direct-message material needs no invented Notebook ancestry.
@@ -60,8 +60,9 @@ otherwise `NMEM_API_URL`, `NMEM_API_KEY` and the host's shared NM config apply.
 The resolved URL/key are frozen in memory and supplied to both CLI and HTTP;
 keys are only in subprocess environment / HTTP headers, never output or argv.
 No helper-specific connection file is added. Remote means the same selected
-remote URL, not a second local service. `create --space` is passed to official
-CLI; ambient Space configuration remains intact. Attachment addresses the exact
+remote URL, not a second local service. Always pass the current profile's bound
+space explicitly with `create --space`; do not rely on ambient `NMEM_SPACE`.
+Attachment addresses the exact
 returned ID without moving it between Spaces. Use the **same destination** when
 repairing, including any one-off URL override.
 
@@ -109,7 +110,7 @@ Normal search, read, edit, delete and management use official `nmem` directly;
 consult its help instead of expanding this helper. Do not independently capture
 Threads: admitted completed-Turn archival belongs to the single Provider. NM
 Background Intelligence remains off by operator policy; do not enable automatic
-distillation, add a second sync hook, or rewrite owner-governed Bundle/Policy.
+distillation, add a second sync hook, or rewrite user-managed Bundle/Policy.
 
 Round 3 local basic simulated call checks passed on 2026-10-17. Checks are limited to syntax,
 arguments, simulated creation JSON and call ordering: preview makes no calls;

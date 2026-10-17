@@ -46,14 +46,14 @@ def _resolve_nmem() -> Optional[str]:
     if found:
         return found
 
-    candidates: List[str] = []
+    paths: List[str] = []
     for env_name in ("NMEM_CLI_PATH", "NMEM_BIN", "NMEM_CLI"):
         configured = os.environ.get(env_name)
         if configured and configured.strip():
-            candidates.append(os.path.expanduser(configured.strip()))
+            paths.append(os.path.expanduser(configured.strip()))
 
     if sys.platform == "darwin":
-        candidates.extend(
+        paths.extend(
             [
                 "~/.local/bin/nmem",
                 "/opt/homebrew/bin/nmem",
@@ -61,7 +61,7 @@ def _resolve_nmem() -> Optional[str]:
             ]
         )
     elif os.name != "nt":
-        candidates.extend(
+        paths.extend(
             [
                 "~/.local/bin/nmem",
                 "/usr/local/bin/nmem",
@@ -69,10 +69,10 @@ def _resolve_nmem() -> Optional[str]:
             ]
         )
 
-    for candidate in candidates:
-        path = os.path.expanduser(candidate)
-        if os.path.isfile(path) and os.access(path, os.X_OK):
-            return path
+    for path in paths:
+        expanded = os.path.expanduser(path)
+        if os.path.isfile(expanded) and os.access(expanded, os.X_OK):
+            return expanded
     return None
 
 
@@ -583,9 +583,9 @@ class NowledgeMemClient:
     def _retry_urls(url: str) -> List[str]:
         urls: List[str] = []
 
-        def add(candidate: str) -> None:
-            if candidate not in urls:
-                urls.append(candidate)
+        def add(retry_url: str) -> None:
+            if retry_url not in urls:
+                urls.append(retry_url)
 
         parsed = urlparse.urlsplit(url)
         path = parsed.path or ""

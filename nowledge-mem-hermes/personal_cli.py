@@ -202,7 +202,7 @@ def main(argv: list[str] | None = None) -> int:
     create.add_argument("--content-file", required=True, help="Approved UTF-8 body, passed unchanged to CLI stdin")
     create.add_argument("--title")
     create.add_argument("--label", "-l", action="append", default=[])
-    create.add_argument("--space", help="Official CLI Space selector; otherwise preserve host configuration")
+    create.add_argument("--space", help="Bound profile Space; pass explicitly, do not rely on ambient NMEM_SPACE")
     attach = sub.add_parser("attach", help="Repair metadata only for a known created Memory ID")
     attach.add_argument("memory_id")
     for command in (create, attach):
