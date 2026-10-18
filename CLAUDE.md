@@ -4,7 +4,7 @@
 
 暂无。2026-10-18窄helper一次正式API创建并携Metadata为用户明确修订，不是Agent自主扩大路线。
 
-## 五分钟数据库快照与同步增量（2026-10-19；主会话已亲审，获授权接通中）
+## 五分钟数据库快照与同步增量（2026-10-19；数据库与配置已接通，workspace等待用户Desktop权限）
 
 - 用户最新定案：每5分钟云端本地SQLite快照；Mac离线不影响云后端，不无限积压或追加日志。云唯一运行writer，本机为冷态数据库副本；workspace整个目录双向、每Profile四项非凭据配置/SOUL双向、完成数据库快照单向，rawDB绝不直接双向。
 - 明确必需库Alex/state.db、study/state.db；固定known optional为两Profile的projects.db和nowledge-mem-personal/receipts.sqlite3，仅存在时纳入，后续新出现仍可进入下一快照，不扫描未知DB。接收端完整预验与同步外已验current/previous两槽后，允许原子落到对应本机批准DB路径；配置/SOUL不从快照覆盖。
@@ -13,7 +13,9 @@
 - 依据主仓`.autonomous/20261019-cloud-deployment/`与最新用户口径；证据统一放主仓ignored `deployment-release-20261019/sync/`。已通过旧9节点仅按未变路径复用，不重开大型套。
 - 新增 `publish-cycle`／`receive-cycle` 已完成，Mac真实SQLite/句柄/sidecar/原子落库fixture及独立CLI入口共19个不同pytest节点通过，分6次定向调用取证；原9节点未重跑。首轮full health发现main新增分支链HX011，改为命令映射后全量相关health命中0；冻结Ruff／复杂度／结构通过。helper SHA与准确命令见sync/manifest.json及commands-and-results.json。
 - 三lane Mutagen、专属无UI SSH代理、systemd五分钟timer、Mac launchd五分钟＋到件触发草稿齐；正常等待/暂停不报错风暴、真实拒绝/部分失败CLI退出2，状态固定覆盖，任务输出/dev/null。发布前保留512MiB加两倍已知源库/WAL工作空间；源/接收互斥锁及受管残留清理，无无限时间戳包。Mac首次原DB以initial固定硬链接保留，已验两槽独立于是否已落库。
-- 云初始数据就绪由主会话明确交接（48/6065迁cwd完成、study0/0），本包随后获明确release；真实接线、对齐、冷镜像及离线恢复证据追加sync/activation/。现5个Pi Mutagen sessions/模式/端点保持，最后停清任务仍由root另行执行。激活前先核云最终配置无内嵌凭据，安全预对齐本机静态文件、SOUL冻结SHA不变，禁止two-way-resolved或Mac旧配置覆盖云生产。本次只按release安装同SHA helper与专属配置／unit，SOUL/.env/model/NM不改，业务数据仅批准的在线backup与Mac冷镜像。
+- 四文件源提交 `5c7fad173e0b60ff55b9d2183e58499ceea93915` 已自动push并核远端同HEAD，Provider a722保持。两端安装helper SHA `8e1ecc2de07f71a695588c7c6036d985536ffc7895558229be09d5baba0e97a4`。真实scratch已验证8项配置／1个ZIP、未知路径／.env／DB／sidecar排除及反向允许更新；六项非SOUL配置经秘密核验、Mac受限初始备份后精确预对齐，两SOUL冻结SHA保持。
+- 首次真实包已是Alex49会话6067消息、study0/0，不能拿初始48/6065覆盖新会话；连同Alex/projects.db三库完整字节、schema、逐表身份／内容SHA与Mac目标一致，Pi旧Alex/state.db初始inode和SHA永久保留。云五分钟systemd timer已真实触发；Mac launchd每300秒和到件触发exit0并实际更新目标。只暂停新snapshot lane期间云本地publisher仍完成固定ZIP／status，恢复后真实传输追上、receiver落库，已验current/previous两槽齐。详细实据见sync/activation/。
+- 当前唯一本包阻塞为workspace `WAITING_TCC`：既有Mutagen daemon PID647访问用户指定 `~/Desktop/Alex` 后，macOS tccd明确请求DesktopFolder许可。主会话已向用户请求亲自允许；未操作UI、绕过TCC、改workspace路径或重启daemon。唯一自有marker保留供放行后往返和清理。profile-config、snapshot两lane均watching、实际扫描8／1文件，无conflict；旧5条Pi sessions配置／暂停状态未变，最后清理由root另案。云backend及proxy PID／启动时间保持，未停服、重启或发送模型／NM请求。
 
 ## study 自动 Thread 同步 Space 拆分（2026-10-19；功能保留，study当前继承原Space）
 
@@ -24,7 +26,7 @@
 - 冻结Core Ruff配置、C901≤20、函数≤300行／嵌套≤6／文件≤2000和diff检查通过；全部模块常量及Prompt构建函数与个人基线AST一致。仅直接JSON配置新增可选键，setup表单保持；无真实NM读写、服务、UI／显示状态操作。完整报告与指纹见上述证据目录 `report.md`／`manifest.json`。
 - 新study已由正式installer preview／apply完成10个FILES插件安装，源码／落盘SHA全匹配；config.yaml、.env、nowledge-mem.json的bytes及mode保持，未新增override、默认模型或Idle参数。两份SOUL未打开／修改，未接触Alex／旧测试Profile／DB／全局registry。仅准备静态云端installer包，未SSH／Mutagen／服务启动；既有21节点不重复运行。
 
-## 当前交付与新部署筹备（2026-10-19）
+## 首次静态部署工具筹备记录（2026-10-19；后续真实接通见上方）
 
 - 固定v5产品意图PI01–26已由独立Astra Verification及6.1 Validation全范围PASS；主仓E04旧分支尾部读取缺陷已修复并经原A冷UI关闭。下方v3/v4及旧NOT PASS均保留历史时点，不作为当前状态。当前判定与唯一总体看板在并列主仓CLAUDE和`.autonomous/20261018-product-intent-review/final-delivery.md`。
 - 用户确认复用既有Mutagen通道：配置/SOUL同步、云端唯一运行DB生成一致性快照回传，其它运行态无需同步。独立运维工具`nowledge-mem-hermes/deployment/hermes-sqlite-snapshot.py`已亲审接收，安装`~/scrips/hermes-sqlite-snapshot.py`，SHA `6d9d25bf78c526692dde70618f638b837be960e4fc6b134a80892a8a0852d237`；不依赖Hermes、不进入Provider工具/Prompt、不激活后台机制。
