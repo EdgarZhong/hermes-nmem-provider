@@ -4,6 +4,17 @@
 
 暂无。2026-10-18窄helper一次正式API创建并携Metadata为用户明确修订，不是Agent自主扩大路线。
 
+## 五分钟数据库快照与同步增量（2026-10-19；主会话已亲审，获授权接通中）
+
+- 用户最新定案：每5分钟云端本地SQLite快照；Mac离线不影响云后端，不无限积压或追加日志。云唯一运行writer，本机为冷态数据库副本；workspace整个目录双向、每Profile四项非凭据配置/SOUL双向、完成数据库快照单向，rawDB绝不直接双向。
+- 明确必需库Alex/state.db、study/state.db；固定known optional为两Profile的projects.db和nowledge-mem-personal/receipts.sqlite3，仅存在时纳入，后续新出现仍可进入下一快照，不扫描未知DB。接收端完整预验与同步外已验current/previous两槽后，允许原子落到对应本机批准DB路径；配置/SOUL不从快照覆盖。
+- 本机活库／打开句柄／WAL/SHM/journal拒绝覆盖，不删sidecar、不杀服务、不自动merge本机写入；初次冷库原件另保留，不删原Pi库外部备份。单接收锁、幂等、失败准确报告、固定status文件及有限日志。
+- 仅扩个人deployment窄helper及对应fixture测试，准备项目Mutagen/SSH/定时器草稿；保护既有5个Mutagen sessions和daemon。主会话已亲审同SHA包并授权仅四文件提交／自动push和真实三lane、timer、冷镜像激活；云ready已满足。激活前以真实scratch验证allowlist，三项非SOUL配置受限备份和预对齐；SOUL只核冻结SHA，秘密／SOUL差异／活库保护不绕过。Provider/Prompt不改。
+- 依据主仓`.autonomous/20261019-cloud-deployment/`与最新用户口径；证据统一放主仓ignored `deployment-release-20261019/sync/`。已通过旧9节点仅按未变路径复用，不重开大型套。
+- 新增 `publish-cycle`／`receive-cycle` 已完成，Mac真实SQLite/句柄/sidecar/原子落库fixture及独立CLI入口共19个不同pytest节点通过，分6次定向调用取证；原9节点未重跑。首轮full health发现main新增分支链HX011，改为命令映射后全量相关health命中0；冻结Ruff／复杂度／结构通过。helper SHA与准确命令见sync/manifest.json及commands-and-results.json。
+- 三lane Mutagen、专属无UI SSH代理、systemd五分钟timer、Mac launchd五分钟＋到件触发草稿齐；正常等待/暂停不报错风暴、真实拒绝/部分失败CLI退出2，状态固定覆盖，任务输出/dev/null。发布前保留512MiB加两倍已知源库/WAL工作空间；源/接收互斥锁及受管残留清理，无无限时间戳包。Mac首次原DB以initial固定硬链接保留，已验两槽独立于是否已落库。
+- 云初始数据就绪由主会话明确交接（48/6065迁cwd完成、study0/0），本包随后获明确release；真实接线、对齐、冷镜像及离线恢复证据追加sync/activation/。现5个Pi Mutagen sessions/模式/端点保持，最后停清任务仍由root另行执行。激活前先核云最终配置无内嵌凭据，安全预对齐本机静态文件、SOUL冻结SHA不变，禁止two-way-resolved或Mac旧配置覆盖云生产。本次只按release安装同SHA helper与专属配置／unit，SOUL/.env/model/NM不改，业务数据仅批准的在线backup与Mac冷镜像。
+
 ## study 自动 Thread 同步 Space 拆分（2026-10-19；功能保留，study当前继承原Space）
 
 - 用户最新纠正：拆分功能保留，当前study的自动Thread继续考研Space，不投递Default。待部署Home `/Users/edgar/.hermes_profiles/study` 保持 `space:"space"`、`archive_enabled:true`，不设置 `thread_sync_space`；Bundle、Recall、Active space及Thread均继承原Space。可选字段未配置保持旧Space与收据键；显式字符串仍支持名称／别名及Default，空串表示Default，错误类型拒绝初始化。

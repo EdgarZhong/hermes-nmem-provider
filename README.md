@@ -6,12 +6,16 @@
 |---|---|
 | 个人NM设计与接口边界 | [PHASE3.md](nowledge-mem-hermes/docs/PHASE3.md)（上半部§1–7；下半部历史参考） |
 | 已有插件结构、安装入口与本地测试命令 | [插件README](nowledge-mem-hermes/README.md) |
-| SQLite一致性快照、完整验证与离线恢复工具（独立于Provider） | [hermes-sqlite-snapshot.py](nowledge-mem-hermes/deployment/hermes-sqlite-snapshot.py)，部署至 `~/scrips/`；明确DB清单，复用文件同步通道，无后台任务 |
+| SQLite一致性快照、完整验证与离线恢复工具（独立于Provider） | [hermes-sqlite-snapshot.py](nowledge-mem-hermes/deployment/hermes-sqlite-snapshot.py)，部署至 `~/scrips/`；明确DB清单，固定完成包；支持已验两槽与冷态DB镜像，无内置守护进程 |
 | 当前进度、验收边界与交接 | [CLAUDE.md](CLAUDE.md) |
 | 协作规则与开发闭环 | [AGENTS.md](AGENTS.md) |
 | 历史版本测试证据 | [TEST_REPORT.md](nowledge-mem-hermes/docs/TEST_REPORT.md) |
 
 目录：`personal_*.py`承载个人策略，`client.py`／`provider.py`保留上游辅助能力，`personal_tests/`为隔离测试，`docs/`存规格和报告。隔离测试复用并列 Secretary 官方 PM 环境及 canonical runner；准备源码链接与准确命令见[插件测试入口](nowledge-mem-hermes/README.md#tests-and-boundaries)。测试使用模拟NM客户端／本地HTTP服务，不代表真实NM联调。现有安装入口为 `install_personal.py`；安装和部署需按当前任务授权执行。
+
+快照工具的 `publish-cycle` 只做云端本地SQLite backup，固定必需库为 `Alex/state.db`／`study/state.db`，固定可选库为两Profile的 `projects.db`／`nowledge-mem-personal/receipts.sqlite3`（存在才纳入），不泛扫其它路径、不读SOUL或配置。它固定原子发布 `databases-current.zip`，有互斥锁、磁盘余量检查及覆盖式有界 `status.json`；不依赖Mac在线。
+
+`receive-cycle` 完整验包后保留同步树外的 `current.zip`／`previous.zip`，只将批准SQLite文件原子镜像至对应冷态Home。它用真实打开文件检查（需系统 `lsof`）、POSIX文件锁和WAL/SHM/journal拒绝规则保护本机活库，不删sidecar、不杀服务；首次被替换库在同步外 `initial/` 永久保留原inode。相同文件不重复replace；中途失败返回已替换列表，下一轮可接续，不假称跨库事务。SOUL／配置永不从数据库包反写。源码只依赖Python 3.11+标准库，新周期命令限Mac/Linux；运输与5分钟定时由独立部署配置负责，激活状态见CLAUDE。
 
 下方保留上游Community目录与资料导航；不是个人Provider的行为、安装或发布要求。个人行为以本仓库上述入口为准。
 
