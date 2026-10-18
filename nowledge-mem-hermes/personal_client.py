@@ -2,6 +2,9 @@
 from __future__ import annotations
 
 import json
+import os
+import tempfile
+from pathlib import Path
 from typing import Any
 from urllib import error, parse, request
 from .client import NowledgeMemClient
@@ -52,12 +55,20 @@ class PersonalMemClient(NowledgeMemClient):
             raise RuntimeError("Invalid NM JSON response") from None
 
     def context_bundle(self, *, source_app="hermes", host_agent_id=None):
-        params = {"source_app": source_app, "include_working_memory": "false"}
+        cmd = ["context", "read", "--source-app", source_app, "--no-working-memory"]
         if host_agent_id:
-            params["host_agent_id"] = host_agent_id
+            cmd.extend(["--host-agent-id", host_agent_id])
         if self._has_explicit_space and self._space:
-            params["space_id"] = self._space
-        return self.request_json("GET", "/context/bundle?" + parse.urlencode(params))
+            cmd.extend(["--space-id", self._space])
+        result = self._cli(cmd)
+        # Official CLI retains an omission envelope even when no WM is returned.
+        # Adapt only affirmative omission with empty content for the existing parser.
+        if isinstance(result, dict):
+            working_memory = result.get("working_memory")
+            if (isinstance(working_memory, dict) and working_memory.get("omitted") is True
+                    and working_memory.get("content") in (None, "")):
+                result = {**result, "working_memory": None}
+        return result
 
     def search(self, query="", *, limit=10, filter_labels=None, mode=None, min_importance=None):
         """Reuse official CLI/config/timeout handling; the query is one literal argument.
@@ -89,6 +100,34 @@ class PersonalMemClient(NowledgeMemClient):
         if not isinstance(result, dict) or result.get("id") != memory_id:
             raise RuntimeError("Memory ID mismatch")
         return result
+
+    def import_thread(self, thread_id, messages, *, title=None, source="hermes",
+                      expected_message_count=None, idempotency_key=None):
+        """Use official file import, including its checkpointed suffix operation.
+
+        File import sends JSON messages to remote servers; CLI append --file sends
+        a server-local path, and its output discards the server's Thread identity.
+        """
+        if not messages:
+            return {"success": True, "thread_id": thread_id, "imported": 0}
+        fd, filename = tempfile.mkstemp(prefix="hermes-nmem-thread-", suffix=".json")
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as handle:
+                json.dump(messages, handle, ensure_ascii=False)
+            cmd = ["threads", "import", "--file", filename, "--id", thread_id]
+            if title:
+                cmd.extend(["--title", title])
+            if source:
+                cmd.extend(["--source", source])
+            if self._has_explicit_space and self._space:
+                cmd.extend(["--space-id", self._space])
+            if expected_message_count is not None:
+                cmd.extend(["--expected-message-count", str(expected_message_count)])
+            if idempotency_key:
+                cmd.extend(["--idempotency-key", idempotency_key])
+            return self._cli(cmd)
+        finally:
+            Path(filename).unlink(missing_ok=True)
 
     def _api_post(self, path, payload):
         # Preserve upstream import/append shapes while adding redirect and error hygiene.

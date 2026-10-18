@@ -21,6 +21,14 @@ from .personal_scope import (HistoryReconciliationRequired, Scope, clean_transcr
                              completed_history_rows, resolve_scope)
 
 log = logging.getLogger(__name__)
+
+
+class _ArchiveAckError(RuntimeError):
+    def __init__(self, category):
+        self.category = category
+        super().__init__("NM did not explicitly acknowledge Thread write")
+
+
 VERSION = "0.6.0"
 MEMORY_CHECK = "Memory check: use nmem CLI if needed."
 _POSITIONING = """# Nowledge Mem (NM)
@@ -222,6 +230,7 @@ class PersonalNowledgeMemProvider(NowledgeMemProvider):
         self._recall_client = None
         self._config = {}
         self._disabled = True
+        self._archive_enabled = False
         self._accepted_archive = None
         self._client_space = ""
         self._space_label = "Default"
@@ -275,6 +284,7 @@ class PersonalNowledgeMemProvider(NowledgeMemProvider):
         with self._policy_lock:
             # Failed reinitialization must not leave another profile's live clients behind.
             self._disabled = True
+            self._archive_enabled = False
             self._accepted_archive = None
             self._context_epoch += 1
             self._client = self._recall_client = None
@@ -288,6 +298,9 @@ class PersonalNowledgeMemProvider(NowledgeMemProvider):
             config = json.loads(path.read_text(encoding="utf-8")) if path.is_file() else {}
             if not isinstance(config, dict):
                 raise ValueError("nowledge-mem.json must be an object")
+            archive_enabled = config.get("archive_enabled", True)
+            if not isinstance(archive_enabled, bool):
+                raise ValueError("archive_enabled must be a boolean")
             self._config = config
             self._timeout = _number(config, "timeout", 8, 1, 60)
             self._recall_timeout = _number(config, "recall_timeout", 2, 0.1, 5)
@@ -303,6 +316,7 @@ class PersonalNowledgeMemProvider(NowledgeMemProvider):
             self._profile_name = self._profile_name_for_home(self._home)
             self._client = PersonalMemClient(timeout=self._timeout, space=self._client_space)
             self._recall_client = PersonalMemClient(timeout=self._recall_timeout, space=self._client_space)
+            self._archive_enabled = archive_enabled
             self._disabled = False
             # No Bundle/network read here: cron is sync-only; new rows may not exist yet.
 
@@ -409,7 +423,21 @@ class PersonalNowledgeMemProvider(NowledgeMemProvider):
         results = result.get("results")
         return results is None or (isinstance(results, list) and all(
             isinstance(item, dict) and item.get("success") is True and not item.get("error")
+            and item.get("thread_id", thread_id) == thread_id
             for item in results))
+
+    @staticmethod
+    def _archive_failure_category(result, thread_id):
+        if not isinstance(result, dict):
+            return "invalid_ack_shape"
+        results = result.get("results")
+        items = [result] + ([item for item in results if isinstance(item, dict)]
+                            if isinstance(results, list) else [])
+        if any(item.get("error_code") == "thread_not_found" for item in items):
+            return "thread_not_found"
+        if any(item.get("thread_id", thread_id) != thread_id for item in items):
+            return "thread_id_mismatch"
+        return "negative_or_ambiguous_ack"
 
     def _archive(self, scope: Scope, messages):
         if not scope.sync_allowed:
@@ -428,6 +456,8 @@ class PersonalNowledgeMemProvider(NowledgeMemProvider):
         return self._archive_cleaned(scope, cleaned)
 
     def _archive_cleaned(self, scope: Scope, cleaned):
+        if self._disabled or not self._archive_enabled:
+            return {"status": "skipped"}
         fingerprints = [hashlib.sha256(json.dumps(row, sort_keys=True, ensure_ascii=False).encode()).hexdigest() for row in cleaned]
         state_dir = Path(self._home) / "nowledge-mem-personal"
         state_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
@@ -448,15 +478,14 @@ class PersonalNowledgeMemProvider(NowledgeMemProvider):
             delta = cleaned[len(previous):]
             if not delta:
                 return {"status": "unchanged", "thread_id": scope.thread_id}
-            if stored is None:
-                result = self._client.import_thread(scope.thread_id, delta,
-                    title=scope.title or self._build_thread_title(cleaned), source="hermes")
-                if not self._archive_acknowledged(result, scope.thread_id) and self._thread_already_exists(result):
-                    result = self._client.append_thread(scope.thread_id, delta)
-            else:
-                result = self._client.append_thread(scope.thread_id, delta)
+            checkpoint = {}
+            if stored is not None:
+                checkpoint = {"expected_message_count": len(previous),
+                              "idempotency_key": hashlib.sha256(json.dumps([key, fingerprints]).encode()).hexdigest()}
+            result = self._client.import_thread(scope.thread_id, delta,
+                title=scope.title or self._build_thread_title(cleaned), source="hermes", **checkpoint)
             if not self._archive_acknowledged(result, scope.thread_id):
-                raise RuntimeError("NM did not explicitly acknowledge Thread write")
+                raise _ArchiveAckError(self._archive_failure_category(result, scope.thread_id))
             db.execute("INSERT INTO receipts VALUES (?,?,?) ON CONFLICT(scope) DO UPDATE SET fingerprints=excluded.fingerprints,synced_at=excluded.synced_at",
                        (key, json.dumps(fingerprints), time.time()))
         return {"status": "acknowledged", "thread_id": scope.thread_id, "appended": len(delta)}
@@ -468,7 +497,8 @@ class PersonalNowledgeMemProvider(NowledgeMemProvider):
             log.warning("Personal NM Thread reconciliation-required; acknowledged prefix differs; no write attempted")
             return {"status": "reconciliation-required", "thread_id": scope.thread_id}
         except Exception as exc:
-            log.warning("Personal NM Thread sync not acknowledged (%s); retry on next completed boundary", type(exc).__name__)
+            log.warning("Personal NM Thread sync not acknowledged (%s); retry on next completed boundary",
+                        getattr(exc, "category", type(exc).__name__))
             return {"status": "unacknowledged", "thread_id": scope.thread_id}
 
     def sync_turn(self, user_content, assistant_content, *, session_id="", messages=None,
@@ -476,7 +506,7 @@ class PersonalNowledgeMemProvider(NowledgeMemProvider):
         # The native completed hook is the admission authority. Optional verdicts
         # let explicit callers fail closed; no pair-only or session-end admission.
         with self._policy_lock:
-            if completed is not True or interrupted or failed:
+            if not self._archive_enabled or completed is not True or interrupted or failed:
                 return {"status": "skipped"}
             scope = self._scope(session_id)
             if not scope.sync_allowed:
@@ -492,7 +522,7 @@ class PersonalNowledgeMemProvider(NowledgeMemProvider):
         # End/close can follow a failed or interrupted Turn. Only retry a snapshot
         # admitted by sync_turn, never treat the arbitrary closing tail as complete.
         with self._policy_lock:
-            if self._accepted_archive is None:
+            if not self._archive_enabled or self._accepted_archive is None:
                 return
             scope, snapshot = self._accepted_archive
             if scope == self._scope(scope.session_id):
@@ -500,6 +530,7 @@ class PersonalNowledgeMemProvider(NowledgeMemProvider):
 
     def get_config_schema(self):
         return [
+            {"key": "archive_enabled", "description": "Automatically archive completed turns to NM Threads", "type": "boolean", "default": True},
             {"key": "space", "description": "NM Space name/id (blank uses NM default)", "default": ""},
             {"key": "agent_identity", "description": "Optional NM agent identity", "default": ""},
             {"key": "timeout", "description": "Bundle/archive timeout seconds", "type": "number", "default": 8, "minimum": 1, "maximum": 60},
@@ -512,6 +543,7 @@ class PersonalNowledgeMemProvider(NowledgeMemProvider):
         with self._policy_lock:
             self._context_epoch += 1
             self._disabled = True
+            self._archive_enabled = False
             self._client = self._recall_client = None
             self._accepted_archive = None
             self._resolved_space = None

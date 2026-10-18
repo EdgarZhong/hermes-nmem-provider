@@ -111,7 +111,16 @@ class ProviderContextTests(unittest.TestCase):
         self.assertEqual([c._timeout for c in self.clients], [8, 2])
         defaults = {entry["key"]: entry["default"] for entry in provider.get_config_schema()}
         self.assertEqual(defaults, {"timeout": 8, "recall_timeout": 2, "recall_limit": 5,
-                                    "recall_max_chars": 2400, "space": "", "agent_identity": ""})
+                                    "recall_max_chars": 2400, "space": "", "agent_identity": "",
+                                    "archive_enabled": True})
+
+    def test_archive_enabled_rejects_non_boolean_configuration(self):
+        for value in (None, 0, 1, 'false', 'true', [], {}):
+            with self.subTest(value=value):
+                Path(self.home, 'nowledge-mem.json').write_text(
+                    json.dumps({'archive_enabled': value}), encoding='utf-8')
+                with self.assertRaisesRegex(ValueError, 'archive_enabled must be a boolean'):
+                    self.provider()
 
     def test_system_prompt_is_nm_only_and_has_memory_check(self):
         text = self.provider().system_prompt_block()
@@ -502,15 +511,52 @@ class PointerEncodingTests(unittest.TestCase):
 class PersonalClientContextTests(unittest.TestCase):
     def test_bundle_excludes_working_memory_and_encodes_identity(self):
         client = C.PersonalMemClient(timeout=8, space="space & private")
-        with patch.object(client, "request_json", return_value={}) as request:
-            client.context_bundle(source_app="hermes", host_agent_id="id&include_working_memory=true")
-        method, path = request.call_args.args
-        query = parse_qs(urlsplit(path).query)
-        self.assertEqual(method, "GET")
-        self.assertEqual(urlsplit(path).path, "/context/bundle")
-        self.assertEqual(query["include_working_memory"], ["false"])
-        self.assertEqual(query["host_agent_id"], ["id&include_working_memory=true"])
-        self.assertEqual(query["space_id"], ["space & private"])
+        result = types.SimpleNamespace(returncode=0, stdout='{"rendered_markdown":"stable"}', stderr="")
+        with patch.object(U, "_resolve_nmem", return_value="/fixture/nmem"), \
+             patch.object(U, "_run_nmem", return_value=result) as run, \
+             patch.object(client, "request_json") as request, \
+             patch.dict(os.environ, {"NMEM_API_URL": "https://fixture.invalid", "NMEM_API_KEY": "fixture-key",
+                                     "NMEM_SPACE": "wrong", "NMEM_SPACE_ID": "wrong"}, clear=True):
+            self.assertEqual(client.context_bundle(source_app="hermes", host_agent_id="id&include_working_memory=true"),
+                             {"rendered_markdown": "stable"})
+        self.assertEqual(run.call_args.args[0], ["/fixture/nmem", "--json", "context", "read",
+            "--source-app", "hermes", "--no-working-memory", "--host-agent-id",
+            "id&include_working_memory=true", "--space-id", "space & private"])
+        self.assertEqual(run.call_args.kwargs["timeout"], 8)
+        self.assertEqual(run.call_args.kwargs["env"]["NMEM_API_URL"], "https://fixture.invalid")
+        self.assertEqual(run.call_args.kwargs["env"]["NMEM_API_KEY"], "fixture-key")
+        self.assertEqual(run.call_args.kwargs["env"]["NMEM_SPACE_ID"], "space & private")
+        request.assert_not_called()
+
+    def test_bundle_default_clears_ambient_space_and_propagates_cli_failure(self):
+        client = C.PersonalMemClient(timeout=3, space="")
+        result = types.SimpleNamespace(returncode=1, stdout="", stderr="fixture CLI unavailable")
+        with patch.object(U, "_resolve_nmem", return_value="/fixture/nmem"), \
+             patch.object(U, "_run_nmem", return_value=result) as run, \
+             patch.dict(os.environ, {"NMEM_SPACE": "wrong", "NMEM_SPACE_ID": "wrong"}):
+            with self.assertRaisesRegex(RuntimeError, "fixture CLI unavailable"):
+                client.context_bundle()
+        self.assertEqual(run.call_args.args[0], ["/fixture/nmem", "--json", "context", "read",
+                                               "--source-app", "hermes", "--no-working-memory"])
+        self.assertEqual(run.call_args.kwargs["timeout"], 3)
+        self.assertNotIn("NMEM_SPACE", run.call_args.kwargs["env"])
+        self.assertNotIn("NMEM_SPACE_ID", run.call_args.kwargs["env"])
+
+    def test_bundle_omission_envelope_preserves_existing_working_memory_rejection(self):
+        client = C.PersonalMemClient(space='default')
+        for envelope, accepted in (({'exists': False, 'omitted': True, 'content': ''}, True),
+                                   ({'omitted': False, 'content': ''}, False),
+                                   ({'omitted': True, 'content': 'must not enter'}, False)):
+            with self.subTest(envelope=envelope):
+                reply = {'rendered_markdown': 'Stable context', 'working_memory': envelope}
+                with patch.object(client, '_cli', return_value=reply):
+                    bundle = client.context_bundle()
+                if accepted:
+                    self.assertEqual(P.stable_bundle_text(bundle), 'Stable context')
+                else:
+                    with self.assertRaises(ValueError):
+                        P.stable_bundle_text(bundle)
+                self.assertIs(reply['working_memory'], envelope)
 
     def test_search_keeps_dash_query_literal_and_reuses_cli_timeout_config(self):
         query = '--mode deep; "$(do-not-run)" 之前'
@@ -530,7 +576,7 @@ class PersonalClientContextTests(unittest.TestCase):
         with patch.object(client, "_api_url", return_value="https://fixture.invalid?other=1"), \
              patch.object(C.request, "build_opener") as opener:
             with self.assertRaises(ValueError):
-                client.context_bundle()
+                client.request_json("GET", "/context/bundle")
             opener.assert_not_called()
 
 

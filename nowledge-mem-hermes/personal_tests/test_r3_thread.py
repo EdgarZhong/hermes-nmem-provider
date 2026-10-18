@@ -16,6 +16,7 @@ import tempfile
 import threading
 import time
 import types
+import subprocess
 import unittest
 from contextlib import closing
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -30,6 +31,7 @@ PACKAGE = types.ModuleType('_nm_r3_thread')
 PACKAGE.__path__ = [str(ROOT)]
 sys.modules[PACKAGE.__name__] = PACKAGE
 P = importlib.import_module(PACKAGE.__name__ + '.personal_provider')
+U = importlib.import_module(PACKAGE.__name__ + '.client')
 INSTALLER = importlib.import_module(PACKAGE.__name__ + '.install_personal')
 
 
@@ -50,6 +52,8 @@ class Handler(BaseHTTPRequestHandler):
         payload = json.loads(self.rfile.read(int(self.headers['Content-Length'])))
         self.calls.append(('POST', self.path, payload))
         reply = self.replies.pop(0) if self.replies else {'success': True}
+        if callable(reply):
+            reply = reply(payload)
         if reply == 'disconnect':
             self.connection.shutdown(socket.SHUT_RDWR)
             self.connection.close()
@@ -94,10 +98,10 @@ class ArchiveIntegrationTests(unittest.TestCase):
         self.addCleanup(self.db.close)
         self.providers = []
 
-    def provider(self, sid='s1', source='cli', space='fixture-space'):
+    def provider(self, sid='s1', source='cli', space='fixture-space', **config):
         if self.db.get_session(sid) is None:
             self.db.create_session(sid, source)
-        (self.home / 'nowledge-mem.json').write_text(json.dumps({'space': space}))
+        (self.home / 'nowledge-mem.json').write_text(json.dumps({'space': space, **config}))
         p = P.PersonalNowledgeMemProvider()
         p.initialize(sid, hermes_home=str(self.home), platform=source, agent_context='primary')
         self.providers.append(p)
@@ -124,6 +128,144 @@ class ArchiveIntegrationTests(unittest.TestCase):
         with closing(sqlite3.connect(path)) as db:
             return list(db.execute('SELECT scope,fingerprints FROM receipts'))
 
+    def test_cli_file_import_preserves_large_payload_config_and_cleans_file(self):
+        p = self.provider()
+        messages = [{'role': 'user', 'content': '合成资料' * 100000,
+                     'timestamp': '2026-10-18T00:00:00Z'}]
+        files = []
+        acknowledgement = {'success': True, 'thread_id': 'fixture-thread'}
+
+        def run(argv, *, timeout, env):
+            self.assertEqual(argv[:4], ['/fixture/nmem', '--json', 'threads', 'import'])
+            path = Path(argv[argv.index('--file') + 1])
+            files.append(path)
+            self.assertEqual(path.stat().st_mode & 0o777, 0o600)
+            self.assertEqual(json.loads(path.read_text(encoding='utf-8')), messages)
+            self.assertLess(sum(map(len, argv)), 2000)
+            self.assertEqual(argv[argv.index('--id') + 1], 'fixture-thread')
+            self.assertEqual(argv[argv.index('--space-id') + 1], 'fixture-space')
+            self.assertEqual(argv[argv.index('--expected-message-count') + 1], '7')
+            self.assertEqual(argv[argv.index('--idempotency-key') + 1], 'checkpoint-key')
+            self.assertEqual(env['NMEM_SPACE_ID'], 'fixture-space')
+            self.assertEqual(env['NMEM_API_URL'], self.url)
+            self.assertEqual(timeout, p._client._timeout)
+            return types.SimpleNamespace(returncode=0, stdout=json.dumps(acknowledgement), stderr='')
+
+        with patch.object(U, '_resolve_nmem', return_value='/fixture/nmem'), \
+             patch.object(U, '_run_nmem', side_effect=run):
+            result = p._client.import_thread('fixture-thread', messages,
+                expected_message_count=7, idempotency_key='checkpoint-key')
+        self.assertEqual(result, acknowledgement)
+        self.assertEqual(len(files), 1)
+        self.assertFalse(files[0].exists())
+        self.assertEqual(Handler.calls, [])
+
+    def test_cli_file_import_cleans_file_on_timeout(self):
+        p = self.provider()
+        files = []
+
+        def fail(argv, **kwargs):
+            files.append(Path(argv[argv.index('--file') + 1]))
+            raise subprocess.TimeoutExpired('/fixture/nmem', kwargs['timeout'])
+
+        with patch.object(U, '_resolve_nmem', return_value='/fixture/nmem'), \
+             patch.object(U, '_run_nmem', side_effect=fail):
+            with self.assertRaises(subprocess.TimeoutExpired):
+                p._client.import_thread('fixture-thread', [{'role': 'user', 'content': 'fixture'}])
+        self.assertFalse(files[0].exists())
+        self.assertEqual(Handler.calls, [])
+
+    def test_first_import_creates_without_checkpoint_then_uploads_suffix(self):
+        p = self.provider()
+        first = self.add_turn()
+
+        def create_reply(payload):
+            if 'expected_message_count' in payload or 'idempotency_key' in payload:
+                return {'success': False, 'imported_count': 0, 'failed_count': 1,
+                        'results': [{'success': False, 'thread_id': payload['thread_id'],
+                                     'error_code': 'thread_not_found', 'error': 'Thread not found'}]}
+            return {'success': True, 'imported_count': 1, 'failed_count': 0,
+                    'results': [{'success': True, 'thread_id': payload['thread_id']}]}
+
+        Handler.replies = [create_reply]
+        self.assertEqual(p.sync_turn('u', 'a', messages=first)['status'], 'acknowledged')
+        second = self.add_turn(number=2)
+        self.assertEqual(p.sync_turn('u', 'a', messages=first + second)['status'], 'acknowledged')
+        initial, suffix = [write[2] for write in self.writes()]
+        self.assertNotIn('expected_message_count', initial)
+        self.assertNotIn('idempotency_key', initial)
+        self.assertEqual(initial['thread_id'], suffix['thread_id'])
+        self.assertEqual(initial['space_id'], suffix['space_id'])
+        self.assertEqual(suffix['expected_message_count'], 2)
+        self.assertEqual(len(suffix['idempotency_key']), 64)
+        self.assertEqual(len(suffix['messages']), 2)
+
+    def test_batch_wrong_thread_ack_does_not_advance_receipts(self):
+        p = self.provider()
+        rows = self.add_turn()
+        Handler.replies = [{'success': True, 'results': [
+            {'success': True, 'thread_id': 'another-thread'}]}]
+        self.assertEqual(p.sync_turn('u', 'a', messages=rows)['status'], 'unacknowledged')
+        self.assertEqual(self.receipts(), [])
+
+    def test_checkpoint_not_found_keeps_cursor_and_logs_only_safe_category(self):
+        p = self.provider()
+        first = self.add_turn()
+        self.assertEqual(p.sync_turn('u', 'a', messages=first)['status'], 'acknowledged')
+        previous = self.receipts()
+        second = self.add_turn(number=2)
+        Handler.replies = [{'success': False, 'failed_count': 1, 'results': [
+            {'success': False, 'thread_id': p._scope().thread_id,
+             'error_code': 'thread_not_found', 'error': 'PRIVATE BODY MUST NOT BE LOGGED'}]}]
+        with self.assertLogs(P.log, level='WARNING') as logs:
+            self.assertEqual(p.sync_turn('u', 'a', messages=first + second)['status'], 'unacknowledged')
+        self.assertIn('thread_not_found', '\n'.join(logs.output))
+        self.assertNotIn('PRIVATE BODY', '\n'.join(logs.output))
+        self.assertEqual(self.receipts(), previous)
+
+    def test_archive_disabled_preserves_bundle_recall_and_skips_manager_sync(self):
+        p = self.provider(space='default', archive_enabled=False)
+        rows = self.add_turn()
+        with patch.object(p._client, '_cli', return_value={'rendered_markdown': 'Fixture stable context'}) as bundle:
+            self.assertIn('Fixture stable context', p.system_prompt_block())
+            self.assertEqual(bundle.call_args.args[0], [
+                'context', 'read', '--source-app', 'hermes', '--no-working-memory', '--space-id', 'default'])
+        with patch.object(P.PersonalMemClient, '_cli', return_value={
+                'memories': [{'id': 'read-only-pointer', 'title': 'Readable'}]}) as search:
+            self.assertIn('read-only-pointer', p.prefetch('之前'))
+            search.assert_called_once()
+        manager = MemoryManager()
+        manager.add_provider(p)
+        self.addCleanup(manager.shutdown_all)
+        manager.sync_all('question', 'answer', session_id='s1', messages=rows)
+        self.assertTrue(manager.flush_pending(timeout=5))
+        manager.on_session_end(rows)
+        self.assertEqual(p.sync_turn('question', 'answer', messages=rows), {'status': 'skipped'})
+        self.assertEqual(self.writes(), [])
+        self.assertEqual(self.receipts(), [])
+        self.assertFalse((self.home / 'nowledge-mem-personal').exists())
+        self.assertEqual(Handler.calls, [])
+
+    def test_archive_disabled_blocks_final_write_outlet(self):
+        p = self.provider(archive_enabled=False)
+        rows = self.add_turn()
+        self.assertEqual(p._archive_cleaned(p._scope(), rows), {'status': 'skipped'})
+        self.assertEqual(self.writes(), [])
+        self.assertFalse((self.home / 'nowledge-mem-personal').exists())
+
+    def test_reinitialize_disabled_drops_previous_unacknowledged_retry(self):
+        p = self.provider()
+        rows = self.add_turn()
+        Handler.replies = [{'success': False}]
+        self.assertEqual(p.sync_turn('question', 'answer', messages=rows)['status'], 'unacknowledged')
+        self.assertEqual(len(self.writes()), 1)
+        (self.home / 'nowledge-mem.json').write_text(json.dumps({'archive_enabled': False}))
+        p.initialize('s1', hermes_home=str(self.home), platform='cli', agent_context='primary')
+        p.on_session_end(rows)
+        self.assertEqual(p.sync_turn('question', 'answer', messages=rows), {'status': 'skipped'})
+        self.assertEqual(len(self.writes()), 1)
+        self.assertEqual(self.receipts(), [])
+
     def test_real_manager_archive_suffix_restart_and_pending_tail_boundary(self):
         p = self.provider()
         first = self.add_turn()
@@ -143,8 +285,9 @@ class ArchiveIntegrationTests(unittest.TestCase):
         second = self.add_turn(number=2)
         q.sync_turn('question', 'answer', messages=first + second)
         path, payload = self.writes()[-1][1:]
-        self.assertTrue(path.endswith('/append'))
-        self.assertTrue(payload['deduplicate'])
+        self.assertEqual(path, '/threads/import')
+        self.assertEqual(payload['expected_message_count'], 2)
+        self.assertEqual(len(payload['idempotency_key']), 64)
         self.assertEqual(len(payload['messages']), 3)  # previous unmatched user is real History
         self.assertNotIn('api_content', payload['messages'][0])
 
@@ -200,15 +343,20 @@ class ArchiveIntegrationTests(unittest.TestCase):
 
     def test_timeout_does_not_acknowledge_and_retry_remains_at_least_once(self):
         p = self.provider()
-        rows = self.add_turn()
-        p._client._timeout = 0.03
+        first = self.add_turn()
+        self.assertEqual(p.sync_turn('u', 'a', messages=first)['status'], 'acknowledged')
+        previous = self.receipts()
+        rows = first + self.add_turn(number=2)
+        p._client._timeout = 0.1
         Handler.replies = ['timeout']
         self.assertEqual(p.sync_turn('u', 'a', messages=rows)['status'], 'unacknowledged')
-        self.assertEqual(self.receipts(), [])
+        self.assertEqual(self.receipts(), previous)
         p._client._timeout = 2
         self.assertEqual(p.sync_turn('u', 'a', messages=rows)['status'], 'acknowledged')
-        self.assertEqual(len(self.writes()), 2)
-        self.assertEqual(self.writes()[0][2]['messages'], self.writes()[1][2]['messages'])
+        self.assertEqual(len(self.writes()), 3)
+        self.assertEqual(self.writes()[1][2]['messages'], self.writes()[2][2]['messages'])
+        self.assertEqual(self.writes()[1][2]['idempotency_key'], self.writes()[2][2]['idempotency_key'])
+        self.assertEqual(self.writes()[1][2]['expected_message_count'], 2)
 
     def test_edit_rewind_or_empty_path_requires_reconciliation(self):
         p = self.provider()
@@ -240,7 +388,8 @@ class ArchiveIntegrationTests(unittest.TestCase):
         second = self.add_turn(sid='s2', number=2)
         p.sync_turn('u', 'a', messages=second)
         self.assertEqual(p._scope().thread_id, thread)
-        self.assertTrue(self.writes()[-1][1].endswith('/append'))
+        self.assertEqual(self.writes()[-1][1], '/threads/import')
+        self.assertEqual(self.writes()[-1][2]['expected_message_count'], 2)
         self.db.create_session('fork', 'cli', parent_session_id='s2', model_config={'_branched_from': 's2'})
         p.on_session_switch('fork', parent_session_id='s2', reset=True)
         fork_turn = self.add_turn(sid='fork', number=3)
@@ -341,7 +490,9 @@ class ArchiveIntegrationTests(unittest.TestCase):
         self.assertEqual(len(manager.providers), 1)
         self.assertEqual(len(ctx.skills), 1)
         manager.initialize_all('native', hermes_home=str(home), platform='cli')
-        self.assertIn('Fixture stable context', manager.build_system_prompt())
+        with patch.object(manager.providers[0]._client, '_cli', return_value={
+                'rendered_markdown': 'Fixture stable context'}):
+            self.assertIn('Fixture stable context', manager.build_system_prompt())
         manager.sync_all('question', 'answer', session_id='native', messages=[
             {'role': 'user', 'content': 'question'}, {'role': 'assistant', 'content': 'answer'}])
         self.assertTrue(manager.flush_pending(timeout=5))

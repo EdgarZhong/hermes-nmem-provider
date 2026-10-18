@@ -4,6 +4,32 @@
 
 暂无。本轮小脚本两步失败时保留已创建ID、仅修复Metadata是落实用户指定流程的必要工程细化，不是用户另行批准的通用重试系统。
 
+## 本阶段收口 · 个人接入已安装并取得定向真实证据（2026-10-18）
+
+- 主会话已review接收本阶段7文件，安装到本机隔离主助手/考研助手Profile；主助手 `archive_enabled=false`，考研助手true。已安装client SHA256 `3246b0c571e39a67628f7675bbad66f74a0d9b1d085c80c63dd5ed7b86641b47`，provider SHA256 `9bc6e21f08f8469810988bdc310e02d100573eae45bf4703612434db014c0ca7`；Prompt/Skill正文未改，个人依赖未进入公开核心。
+- VP-01第二次正式聊天复验已由root接收：普通Main首批自动归档22条，下一Turn同Thread/同Space增量到24；旧前缀、正文与receipt一致，回收后仍24且无重复。主助手receipt仍0。首轮16次MemHTTPError、第一次修补后4次RuntimeError及诊断均保留；本次不宣称Cron/网络丢ACK/长期exactly-once已真实覆盖。
+- VP-04复用5秒运行配置下3个正式Turn通过证据，不改产品默认预算、不重复测试。**整轮Validation仍NOT PASS，VP-02提案/来源传递行为缺口未关闭**；VP-03自述偏差、VP-05待澄清体验观察及静态Verification历史状态保留。
+- 权威验收结果：并列主仓 [validation.md §5.1–5.2](../hermes-secretary/.autonomous/20261016-round3-secretary-nm/validation.md)。本地ignored报告入口：[Thread修补/诊断/真实复验/提交同步](../hermes-secretary/.hermes-dev/validation-personal-20261018/provider-thread-transport.md)、[Bundle兼容](../hermes-secretary/.hermes-dev/validation-personal-20261018/provider-bundle-cli.md)、[归档控制](../hermes-secretary/.hermes-dev/validation-personal-20261018/provider-archive-control.md)。原始私人数据/凭据不提交，本阶段不重跑有效测试、不重装/重启或新做NM读写。
+
+## VP-01 · Thread 官方CLI传输修补（2026-10-18）
+
+- 首轮真实Validation保留考研助手16次MemHTTPError、0收据/Thread的失败。此任务只修自动Thread正式上传，不重跑业务链、不写真实NM。归档仍由原owner、原receipt和原严格ACK管理；不改任何Prompt、模型路由、Cloudflare/key或公共核心。
+- 个人client改用官方 `threads import --file` 的checkpointed suffix入口：同Thread/Space/source/title，已有ACK计数和稳定重试key；0600临时JSON避免长argv，异常也清理。官方append-file发送服务器本地路径且append输出覆盖服务端Thread ID，不适合此远程路径和原身份校验，因此未采用。原未知/负ACK/错Thread拒绝与prefix分歧拒写保留。
+- 首版真实SessionDB/MemoryManager＋官方nmem CLI→loopback HTTP取得20项定向PASS（3.6秒），但首次正式复验仍4次RuntimeError；一次授权同Thread诊断确认thread_not_found，修正首批普通创建/后续checkpoint，补3项RED→定向7项PASS（2.6秒），含batch身份与安全分类。Ruff/C901/diff通过。其后正式22→24条实测已安装并由root接收，详见顶部；不把旧20项或诊断请求冒充正式通过。
+
+## Validation 准备 · Bundle 官方CLI兼容（2026-10-18）
+
+- 真实接入中urllib Bundle请求被Cloudflare403/1010拒绝，官方CLI同目标读取正常。现将个人client Bundle改用既有 `_cli` 的官方 `context read`，保留source_app、host identity、profile Space、no-working-memory、原配置/timeout与失败处理；不改Prompt、Cloudflare、密钥或公共核心，不重复请求被拒HTTP。
+- CLI保留 `working_memory` 的省略外壳；仅在omitted=true且content为空时归一null，兼容原有严格Bundle校验；实际内容或未明确省略仍拒绝。定向12 PASS，外壳适配后仅5个client节点复测PASS；Ruff通过。真实Default/考研Space读取与原parser均成功，WM排除、Space归属均匹配，只保存状态，无正文/写入。
+- Bundle包已获主会话review接收并安装，真实读取通过；报告为公共ignored `.hermes-dev/validation-personal-20261018/provider-bundle-cli.md`。该包当时不改Thread路径；后续Thread修补及真实结果另见顶部与VP-01段，不回写旧证据结论。
+
+## Validation 准备 · Profile 自动归档控制（2026-10-18）
+
+- 用户已授权开始双 Profile 本机环境搭建与必要修补：主助手读取 Default 禁自动写入，考研助手在专属 Space 可写；此授权覆盖本阶段旧 fixture-only / 真实NM未授权限制。本任务仅修个人插件，不启动真实会话或写 NM。
+- `nowledge-mem.json` 新增布尔 `archive_enabled`，默认 true 保持既有行为；false 禁止完成 Turn 归档、会话结束重试及实际 Thread 上传，Bundle/Recall 保持。初始化时读取，不热更新；框架 Prompt、tool guidance、公共核心、模型路由均未改。
+- 开关只抑制 Provider 自动 Thread，不构成任意 terminal CLI 的服务端只读权限。主助手 SOUL/配置与正式部署由主会话另行接收安排，不据此声明整个 Agent 只读或 Validation 通过。
+- 定向真实 SessionDB/MemoryManager＋loopback HTTP：新增3场景 RED，修复后两文件 canonical runner 60 PASS（3.1秒）；新布尔配置拒绝7种非布尔值。该包当时未跑全量或连接真实 NM；详细指纹/命令/限制见公共 ignored `.hermes-dev/validation-personal-20261018/provider-archive-control.md`。实现已获主会话review接收并安装，正式主助手零归档证据见顶部；后续Bundle/Thread传输适配分包保留。
+
 ## V51 Recall 时间投影修复（2026-10-17）
 
 - Astra首审发现指针日期直接输出epoch／微秒；仅在candidate_index的可读出口复用Hermes原生秒精度formatter，正式prefetch显式传owner profile。内部来源响应、ID、Bundle正文、资格与网络不改。

@@ -8,7 +8,6 @@ import unittest
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from unittest.mock import patch
-from urllib.parse import parse_qs, urlsplit
 
 ROOT=Path(__file__).resolve().parents[1]
 pkg=types.ModuleType('_nm_http_test'); pkg.__path__=[str(ROOT)]; sys.modules[pkg.__name__]=pkg
@@ -45,12 +44,13 @@ class HTTPTests(unittest.TestCase):
     def tearDown(self): self.key.stop(); self.base.stop()
     def test_bundle_excludes_wm_and_preserves_space(self):
         client=C.PersonalMemClient(timeout=2,space='个人 空间')
-        self.assertEqual(client.context_bundle(host_agent_id='edgar-test')['rendered_markdown'],'stable context')
-        query=parse_qs(urlsplit(Handler.calls[0][0]).query)
-        self.assertEqual(query['include_working_memory'],['false']); self.assertEqual(query['space_id'],['个人 空间'])
-        self.assertEqual(query['host_agent_id'],['edgar-test'])
+        with patch.object(C.NowledgeMemClient,'_cli',return_value={'rendered_markdown':'stable context'}) as cli:
+            self.assertEqual(client.context_bundle(host_agent_id='edgar-test')['rendered_markdown'],'stable context')
+        self.assertEqual(cli.call_args.args[0],['context','read','--source-app','hermes','--no-working-memory',
+                                              '--host-agent-id','edgar-test','--space-id','个人 空间'])
+        self.assertEqual(Handler.calls,[])
     def test_credentials_headers_not_query(self):
-        C.PersonalMemClient().context_bundle()
+        C.PersonalMemClient().request_json('GET','/context/bundle')
         path,headers=Handler.calls[0]
         self.assertNotIn('test-not-secret',path); self.assertEqual(headers.get('Authorization'),'Bearer test-not-secret')
     def test_redirect_is_not_followed(self):

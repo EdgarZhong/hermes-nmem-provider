@@ -254,7 +254,15 @@ Space 在 NM 里管理，profile 在 Hermes 里管理；两者通过每个 profi
 - Hermes `profile create --clone` 会按 `<provider>.json` 约定复制 `nowledge-mem.json`；clone 后要改 space，编辑新 profile 的文件即可。
 - NM 连接 URL/key 仍是全局的（`~/.nowledge-mem/config.json` / `NMEM_API_URL` / `NMEM_API_KEY`）；per-profile 只变 space，不支持独立 NM 账号/key。
 
-NM 侧的 space 必须已存在：当前本机检查时 `nmem spaces list` 显示 `enabled: false`，只有 Default；需要用户先在 NM 里 enable + create（或 UI）后，Hermes 才能绑定。新建 space 是空 lane；已有 Memories/Threads 仍在 Default，是否 move 由用户决定；实体图谱仍是全局的。
+**自动归档开关（2026-10-18）：** 同一 profile 文件支持 `archive_enabled`，只接受 JSON 布尔值，省略时默认 `true`，保留既有 Main/Cron 完成 Turn 的 Thread 归档行为。设为 `false` 时禁止归档接纳、会话结束重试及实际 Thread 上传，不创建或推进归档收据；Bundle 与输入前 Recall 保持正常。配置在 Provider 初始化时读取，变更后需新建运行实例或重启所属实例，不在活动会话中热更新。
+
+```json
+{"space": "default", "archive_enabled": false}
+```
+
+此开关仅抑制本 Provider 的自动 Thread 归档，不限制模型通过 terminal 手动执行官方 CLI 或 HTTP，不提供服务端只读凭据。不能单凭此配置宣称整个 Agent 严格只读。它不修改任何 NM Prompt、Space 权限或治理设置。
+
+NM 侧的 space 必须已存在。此前本机检查时 `nmem spaces list` 显示 `enabled: false`，只有 Default；2026-10-18获授权的本机双Profile已绑定Default与用户已创建的考研Space，插件未自动创建或搬移Space。一般部署仍需先在NM enable + create（或UI）后绑定。新建space是空lane；已有Memories/Threads不自动搬移，是否move由用户决定；实体图谱仍是全局的。
 
 ### 8.3 Active space 与跨 space 访问
 
@@ -275,6 +283,8 @@ Provider 在静态 guidance 中注入 `## Active space`，包含当前 profile �
 4. `nowledge-mem.json` 已写入正确的 `space`；未配置的 profile 使用 Default。
 5. 不要用进程级 `NMEM_SPACE` 做 profile 映射；本 fork 已忽略它，profile 文件是唯一 lane selector。
 
+**Bundle 读取入口（2026-10-18）：** 个人 client 复用官方 `nmem --json context read --source-app hermes --no-working-memory`；有 host identity 时传 `--host-agent-id`，有显式 Space 时传同一 `--space-id`。沿已有 `_cli` 使用运行主机的官方连接配置、profile lane和配置timeout，不再由 urllib直接GET Bundle；Thread上传及Metadata接口不因本调整改变。官方CLI返回的 `working_memory` 若明确 `omitted:true` 且 `content` 为null/空串，只将此空省略外壳归一为null以兼容既有Bundle校验；含正文或未明确省略时仍由既有校验拒绝。真实本机CLI 0.10.103已只读取证Default/考研Space与Working Memory排除；无私有正文落盘，不改任何Prompt或Cloudflare设置。
+
 ### 8.5 安装与切换
 
 对每个需要的 profile 分别执行：
@@ -285,6 +295,10 @@ python3 nowledge-mem-hermes/install_personal.py --home "<profile-home>" --apply
 ```
 
 安装器会备份旧 config/plugin，写入 `memory.provider: nowledge-mem`、`memory_enabled: false`、`user_profile_enabled: false`。安装后重启 Hermes 或新建会话；已有 pinned root prompt 需要正常 rebuild/new conversation 才会加载新的 `Memory check`/`Active space` 文案。创建 Memory 的窄 helper 也必须显式传当前 profile 的 `--space`，不要依赖 ambient。
+
+**Thread 官方传输（2026-10-18，VP-01 第二次修补）：** 自动归档统一使用官方 `nmem --json threads import --file <临时JSON> --id <原Thread ID>`，传同profile的Space/source/title。无本地ACK收据的首批使用普通创建，不带checkpoint参数；已有ACK收据后，仅把suffix连同 `--expected-message-count`（ACK前缀长度）和稳定 `--idempotency-key`（同一快照重试不变）交官方增量入口。真实诊断已确认：对不存在的Thread传首批count=0及key，CLI退出0但服务端batch返回success=false/error_code=thread_not_found，不能把checkpoint当创建。正文仅经权限0600临时文件交CLI，本地读取后发送JSON，成功或异常均清理，不进入argv。官方append-file发送服务端本地路径且append输出覆盖原始Thread身份，因此未采用。原始import ACK包括batch各项Thread身份，明确成功后才推进原receipt；未知/失败/身份错配不推进，日志只记录白名单错误类别，不记录原始错误/正文。计数冲突不覆盖或自动修复。`archive_enabled:false`及Main/Cron资格、脱敏、History范围、Bundle/Recall和Prompt不变。
+
+**已安装与真实验证范围（2026-10-18）：** 已安装client SHA256 `3246b0c571e39a67628f7675bbad66f74a0d9b1d085c80c63dd5ed7b86641b47`、provider SHA256 `9bc6e21f08f8469810988bdc310e02d100573eae45bf4703612434db014c0ca7`。主会话已接收普通Main首批22条→同Thread/同Space后续24条的正式聊天结果，旧前缀/正文/receipt一致，回收后无重复；主助手禁自动归档且receipt仍0。VP-04复用5秒运行配置下3个正式Turn通过证据。验收权威在并列主仓 `.autonomous/20261016-round3-secretary-nm/validation.md` §5.1–5.2，诊断/定向测试/指纹/同步记录在其ignored `.hermes-dev/validation-personal-20261018/provider-thread-transport.md`；本机本样本不证明Cron、网络丢ACK或长期exactly-once，VP-02尚未关闭，整轮Validation仍NOT PASS。
 
 ### 8.6 验证清单
 
@@ -302,7 +316,7 @@ python3 nowledge-mem-hermes/install_personal.py --home "<profile-home>" --apply
 - 自动路径的 space 隔离由代码保证；手动 CLI 的 space 约束由 prompt 保证，不是 wrapper。
 - 未配置 profile 的 receipts 仍使用 raw `None` key；若日后显式改成 `"space": ""`，key 会变化，需要迁移或接受一次重传风险。
 - 新 space 是空 lane；不自动搬历史；不自动创建 space；不提供独立 NM 账号/key。
-- 当前没有真实 NM 只读/写入 E2E、云端部署或独立 Verification/Validation 结论；本地 spaces 检查时为 disabled。
+- 真实Bundle读取、普通Main自动Thread首批/后续增量及禁自动归档已取得本机定向结果，详见§8.5；此前spaces-disabled和首轮失败保留为历史观察。云端部署及个人独立Verification尚无通过结论，整轮Validation仍NOT PASS，不将这些样本扩为全面服务保证。
 - PHASE3 历史附录中的旧术语与旧 Secretary 设计不回溯改写；以 §1–§8 为现行口径。
 
 
