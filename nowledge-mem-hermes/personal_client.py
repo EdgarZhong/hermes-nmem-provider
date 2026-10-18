@@ -3,10 +3,11 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
 import tempfile
 from pathlib import Path
 from typing import Any
-from urllib import error, parse, request
+from urllib import parse
 from .client import NowledgeMemClient
 
 
@@ -16,10 +17,53 @@ class MemHTTPError(RuntimeError):
         super().__init__(f"NM HTTP {status}")
 
 
-class _NoRedirect(request.HTTPRedirectHandler):
-    def redirect_request(self, req, fp, code, msg, headers, newurl):
-        # Never send NM credentials to a redirected origin.
-        return None
+_MAX_RESPONSE = 8 * 1024 * 1024
+
+
+def _curl_value(value: str) -> str:
+    """Quote a curl config value; private values never enter argv or a shell."""
+    return '"' + value.replace("\\", "\\\\").replace('"', '\\"').replace(
+        "\r", "\\r").replace("\n", "\\n").replace("\t", "\\t") + '"'
+
+
+def _curl_json(config: str, timeout: float) -> bytes:
+    from hermes_platform.resolver import locate_command
+
+    command = locate_command("curl").command
+    if not command or Path(command[0]).suffix.lower() in {".cmd", ".bat"}:
+        raise RuntimeError("Native curl executable not found; no NM request attempted")
+    # --disable must be first: an ambient curlrc must not add redirects/retries.
+    argv = [*command, "--disable", "--silent", "--globoff", "--proto", "=http,https",
+            "--max-time", str(timeout), "--max-filesize", str(_MAX_RESPONSE),
+            "--config", "-", "--write-out", "\n%{http_code}"]
+    try:
+        with subprocess.Popen(argv, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                              stderr=subprocess.DEVNULL, shell=False) as process:
+            try:
+                process.stdin.write(config.encode("utf-8"))
+                process.stdin.close()
+                # Four trailing bytes carry the status. Bound the read even on
+                # curl versions whose max-filesize only checks Content-Length.
+                data = process.stdout.read(_MAX_RESPONSE + 5)
+                if len(data) > _MAX_RESPONSE + 4:
+                    raise RuntimeError("NM response exceeds safe size")
+                code = process.wait(timeout=timeout + 1)
+            finally:
+                if process.poll() is None:
+                    process.kill()
+                process.wait()
+    except (OSError, subprocess.SubprocessError):
+        raise RuntimeError("NM transport unavailable") from None
+    if code == 63:
+        raise RuntimeError("NM response exceeds safe size")
+    if code != 0 or len(data) < 4 or data[-4:-3] != b"\n" or not data[-3:].isdigit():
+        raise RuntimeError("NM transport unavailable")
+    status = int(data[-3:])
+    if status >= 300:
+        raise MemHTTPError(status)
+    if status < 200:
+        raise RuntimeError("NM transport unavailable")
+    return data[:-4]
 
 
 class PersonalMemClient(NowledgeMemClient):
@@ -29,26 +73,22 @@ class PersonalMemClient(NowledgeMemClient):
         base = self._api_url().rstrip("/")
         parts = parse.urlsplit(base)
         if (parts.scheme not in {"http", "https"} or not parts.netloc or parts.username
-                or parts.password or parts.query or parts.fragment):
+                or parts.password or parts.query or parts.fragment
+                or any(ord(c) < 33 or ord(c) == 127 for c in base + path)):
             raise ValueError("Invalid NM API URL")
-        body = None if payload is None else json.dumps(payload, ensure_ascii=False).encode("utf-8")
+        body = None if payload is None else json.dumps(payload, ensure_ascii=False)
         headers = {"Accept": "application/json", "Content-Type": "application/json"}
         key = self._api_key()
         if key:
+            if any(ord(c) < 32 or ord(c) == 127 for c in key):
+                raise ValueError("Invalid NM authentication header")
             headers.update(Authorization=f"Bearer {key}", **{"X-NMEM-API-Key": key})
-        req = request.Request(base + path, data=body, headers=headers, method=method)
-        try:
-            with request.build_opener(_NoRedirect()).open(req, timeout=self._timeout) as response:
-                data = response.read(8 * 1024 * 1024 + 1)
-        except error.HTTPError as exc:
-            # HTTPError owns a response stream too, including refused redirects.
-            status = exc.code
-            exc.close()
-            raise MemHTTPError(status) from None
-        except (error.URLError, OSError, TimeoutError):
-            raise RuntimeError("NM transport unavailable") from None
-        if len(data) > 8 * 1024 * 1024:
-            raise RuntimeError("NM response exceeds safe size")
+        config = ["url = " + _curl_value(base + path), "request = " + _curl_value(method)]
+        config.extend("header = " + _curl_value(f"{name}: {value}")
+                      for name, value in headers.items())
+        if body is not None:
+            config.append("data-binary = " + _curl_value(body))
+        data = _curl_json("\n".join(config) + "\n", self._timeout)
         try:
             return json.loads(data) if data.strip() else {}
         except (UnicodeError, ValueError):

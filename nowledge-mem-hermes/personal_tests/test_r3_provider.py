@@ -19,7 +19,6 @@ from contextlib import closing
 from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import Mock, patch
-from urllib.parse import parse_qs, urlsplit
 
 ROOT = Path(__file__).resolve().parents[1]
 # Scope the ABC fixture to import, without replacing another suite's host modules.
@@ -574,7 +573,7 @@ class PersonalClientContextTests(unittest.TestCase):
     def test_http_url_with_query_is_rejected_before_transport(self):
         client = C.PersonalMemClient()
         with patch.object(client, "_api_url", return_value="https://fixture.invalid?other=1"), \
-             patch.object(C.request, "build_opener") as opener:
+             patch.object(C.subprocess, "Popen") as opener:
             with self.assertRaises(ValueError):
                 client.request_json("GET", "/context/bundle")
             opener.assert_not_called()

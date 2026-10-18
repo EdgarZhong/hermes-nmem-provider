@@ -4,6 +4,14 @@
 
 暂无。本轮小脚本两步失败时保留已创建ID、仅修复Metadata是落实用户指定流程的必要工程细化，不是用户另行批准的通用重试系统。
 
+## 当前产品意图复审整改（2026-10-18，源码尚未重新安装）
+
+- 主仓本轮入口：`../hermes-secretary/.autonomous/20261018-product-intent-review/`；独立Astra/high审查NOT PASS，其余实现/调查均6.1/high。此前已安装版本和真实证据保留在下方，不冒称以下源码已载入两个运行Profile。
+- root已review接收helper `--space`命令层级与安装器原生`skills.external_dirs`修补：新6项＋既有相关6项通过；隔离新home实际根索引/skill_view与clone所属路径正确。Skill只纠正一行CLI语法，未改行为政策。
+- root已review接收既有request_json的单一默认curl传输：12不同节点分批通过、Ruff/复杂度/diff通过，未改endpoint/key/UA/CF；需要本机native curl，缺失明确失败，不自动回退。原urllib403/1010保留为失败。
+- **E02/VP-02仍阻塞：**唯一获准旧合成Memory做2GET/1Metadata-only PATCH/0创建，正文、标题、标签与13个无关Metadata字段保持；服务忽略hermes_provenance，回读缺失，helper准确partial。随后唯一/openapi.json GET403；官方文档/本机前端未提供可据以修复的任意Metadata更新契约。停止猜路由和反复写，未获新范围不另试PATCH，不改为HTTP创建或塞正文。
+- 报告在主仓ignored `product-intent-review-20261018/`：repair-nm-wiring.md、repair-metadata-transport.md、metadata-contract-research.md。原始来源/响应/凭据不进Git；技能实际模型使用、提案查源/标签、精确来源持久化尚不能宣布通过。本阶段源码提交不代表已安装、重启或整轮通过；后续按主仓统一集成。
+
 ## 本阶段收口 · 个人接入已安装并取得定向真实证据（2026-10-18）
 
 - 主会话已review接收本阶段7文件，安装到本机隔离主助手/考研助手Profile；主助手 `archive_enabled=false`，考研助手true。已安装client SHA256 `3246b0c571e39a67628f7675bbad66f74a0d9b1d085c80c63dd5ed7b86641b47`，provider SHA256 `9bc6e21f08f8469810988bdc310e02d100573eae45bf4703612434db014c0ca7`；Prompt/Skill正文未改，个人依赖未进入公开核心。

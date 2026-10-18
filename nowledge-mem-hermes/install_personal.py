@@ -40,6 +40,20 @@ def load_config(text):
     if memory.get("provider") not in (None, "", "default", "builtin", "built-in", "none", "nowledge-mem"):
         raise ValueError("Another memory provider is selected; refusing to replace it")
     value["memory"] = {**memory, "provider": "nowledge-mem", "memory_enabled": False, "user_profile_enabled": False}
+    skills = value.get("skills", {})
+    if not isinstance(skills, dict):
+        raise ValueError("skills config must be an object")
+    external = skills.get("external_dirs", [])
+    if isinstance(external, str):
+        external = [external]
+    if not isinstance(external, list) or any(not isinstance(entry, str) for entry in external):
+        raise ValueError("skills.external_dirs must be a path or a list of paths")
+    # Native roots are home-relative, so profile clones keep their own installed skill.
+    plugin_skills = "plugins/nowledge-mem/skills"
+    external = list(external)
+    if plugin_skills not in external:
+        external.append(plugin_skills)
+    value["skills"] = {**skills, "external_dirs": external}
     return value
 
 

@@ -43,7 +43,7 @@ title, labels and sources; the helper does not rewrite or infer them. It invokes
 a native official executable using an argument array, equivalent to:
 
 ```text
-nmem --json --api-url <resolved-host-url> [--space <selected-space>] m add --stdin --source hermes-secretary [--title <title>] [-l <label> ...]
+nmem --json --api-url <resolved-host-url> m add --stdin --source hermes-secretary [--space <selected-space>] [--title <title>] [-l <label> ...]
 ```
 
 The body is passed as UTF-8 stdin bytes, not a shell command or command-line

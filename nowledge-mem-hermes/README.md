@@ -34,7 +34,12 @@ memory:
   provider: nowledge-mem
   memory_enabled: false
   user_profile_enabled: false
+skills:
+  external_dirs:
+    - plugins/nowledge-mem/skills
 ```
+
+The installer appends this profile-relative native skill root without replacing other skill settings, so `nm-cli` is discoverable in new root prompts and `skill_view`. Metadata HTTP requests also require a native `curl` executable; they use its default transport, keep secrets off command arguments, and fail explicitly if it is unavailable.
 
 Do **not** disable the whole `memory` toolset: some Hermes versions also gate external provider Prompt blocks through it. Restart Hermes after install. New conversations load the new prompt; an already-pinned old root prompt may require a normal host rebuild/new conversation. The installer does not rewrite old conversation prompts or enable background intelligence.
 
@@ -55,7 +60,7 @@ Connection credentials and URL stay in the normal `nmem` client configuration. N
 
 Existing `space_by_identity` and `space_template` resolution is retained. This fork deliberately ignores ambient `NMEM_SPACE`/`NMEM_SPACE_ID` for per-profile determinism; if none resolves, the provider passes an explicit empty space so the HTTP and CLI clients consistently use the NM default. An explicit empty `space` has the same effect. The API connection URL must be the usable NM API base, not a website login URL.
 
-`system_prompt_block()` requests `/context/bundle?include_working_memory=false` and never falls back to `wm read`. Each native root-prompt build or actual rebuild fetches the Bundle once; the host owns assembled-root caching/restoration. The Provider adds no per-Thread cache that could outlive a compression rebuild. Noting may inherit the parent's already-frozen prompt under the existing cache-parity contract; it does not independently run this Provider.
+`system_prompt_block()` uses the official `context read --source-app hermes --no-working-memory` CLI, including the bound Space, and never falls back to `wm read`. Each native root-prompt build or actual rebuild fetches the Bundle once; the host owns assembled-root caching/restoration. The Provider adds no per-Thread cache that could outlive a compression rebuild. Noting may inherit the parent's already-frozen prompt under the existing cache-parity contract; it does not independently run this Provider.
 
 `prefetch()` performs normal `nmem --json m search`, including short Chinese queries. It returns only intact IDs, titles and available dates, plus the short keyword anchor `Memory check: use nmem CLI if needed.` The detailed recall policy lives once in the static system prompt; the anchor only links the per-turn payload to that policy. It does not inject full Memory bodies, reuse stale query results, or report pointers as memories already read. Host trivial-prompt skipping and historical `api_content` replay are unchanged.
 
@@ -86,7 +91,7 @@ Interactive Secretary sessions use a **read-only** existing `secretary_session_b
 
 Only user/assistant prose and normalized timestamps are archived. Tool results, hidden/Noting scaffolding and recognized compaction summaries are excluded. This is **not a full tool/multimodal execution trace**. Hermes `state.db` remains authoritative and must be backed up.
 
-Acknowledged transcript fingerprints are stored under `$HERMES_HOME/nowledge-mem-personal/receipts.sqlite3`; no transcript bodies or credentials are stored there. Only an affirmative JSON success acknowledgement advances the cursor; malformed, ambiguous, negative or mismatched Thread responses leave it unchanged. A subsequent completed turn retries. Session-end only retries the last snapshot already admitted by the completed-turn hook; it never admits an interrupted closing tail. Resuming retries at the next completed turn. HTTP timeout after server commit can still cause an at-least-once retry; append requests retain the existing deduplicate flag; actual server deduplication has not been verified, and exactly-once delivery is not claimed.
+Acknowledged transcript fingerprints are stored under `$HERMES_HOME/nowledge-mem-personal/receipts.sqlite3`; no transcript bodies or credentials are stored there. Only an affirmative JSON success acknowledgement advances the cursor; malformed, ambiguous, negative or mismatched Thread responses leave it unchanged. A subsequent completed turn retries. Session-end only retries the last snapshot already admitted by the completed-turn hook; it never admits an interrupted closing tail. Resuming retries at the next completed turn. A first batch uses official `threads import --file`; subsequent suffix imports carry the acknowledged message count and a stable idempotency key. A timeout after server commit can still cause an at-least-once retry; exactly-once delivery is not claimed.
 
 An edit/rewind that changes an already-archived prefix is deliberately **not silently appended or overwritten**. Sync returns and logs reconciliation-required; explicit archive reconciliation is a deployment operation, not yet implemented here. Unsupported combined summary/user carriers on non-Secretary hosts are not claimed lossless. Scope failures deny that observation rather than guess. Independent cron sync is allowed, but cron children remain excluded.
 
@@ -125,6 +130,8 @@ Repair never creates again. The previous `read`/`write`/expected-SHA/History
 membership protocol is removed. See the installed [nm-cli skill](skills/nm-cli/SKILL.md)
 for exact statuses and the small-script basic-check boundary.
 
+Current target-service limitation: an authorized metadata-only PATCH on an existing synthetic Memory was accepted but ignored `hermes_provenance`; a subsequent GET confirmed the attachment was absent while the original fields were unchanged. The helper correctly reported `partial`. Metadata persistence is **not verified or complete**; do not treat HTTP success, a created Memory, or skill discovery as complete provenance delivery. The exact supported update contract remains unresolved; see root [CLAUDE.md](../CLAUDE.md) for the current evidence and deployment state.
+
 ## Tests and boundaries
 
 ```bash
@@ -142,7 +149,7 @@ The ignored source symlinks avoid pytest treating the hyphenated plugin director
 
 公共History由 **EdgarZhong/hermes-secretary** 的新版 `conversation_history` 承担，原生 `session_search` 保留。本插件不monkey-patch Core工具；旧PHASE3的session_search改造计划已撤销。
 
-Real NM writes, real server ACK/deduplication and cloud deployment remain unverified
+Earlier real Thread/Bundle samples and the current failed Metadata attachment are recorded separately in root CLAUDE.md; server deduplication beyond those samples and cloud deployment remain unverified
 and unauthorized in this round. An ordinary host run may auto-sync Threads; always
 select a local fixture endpoint before isolated development, never a real account
 for a supposedly read-only trial. The native finalizer must admit only completed,

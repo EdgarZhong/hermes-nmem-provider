@@ -167,9 +167,9 @@ def create_memory(client: _BoundClient, content: str, provenance: dict[str, Any]
         # arguments: cloud/native executables are the supported narrow path.
         raise ValueError("Use a native nmem executable, not a batch shim; no creation attempted")
     argv = [exe, "--json", "--api-url", client._api_url()]
+    argv.extend(["m", "add", "--stdin", "--source", "hermes-secretary"])
     if space is not None:
         argv.extend(["--space", space])
-    argv.extend(["m", "add", "--stdin", "--source", "hermes-secretary"])
     if title is not None:
         argv.extend(["--title", title])
     for label in labels or []:
