@@ -4,6 +4,13 @@
 
 暂无。2026-10-18窄helper一次正式API创建并携Metadata为用户明确修订，不是Agent自主扩大路线。
 
+## 当前交付与新部署筹备（2026-10-19）
+
+- 固定v5产品意图PI01–26已由独立Astra Verification及6.1 Validation全范围PASS；主仓E04旧分支尾部读取缺陷已修复并经原A冷UI关闭。下方v3/v4及旧NOT PASS均保留历史时点，不作为当前状态。当前判定与唯一总体看板在并列主仓CLAUDE和`.autonomous/20261018-product-intent-review/final-delivery.md`。
+- 用户确认复用既有Mutagen通道：配置/SOUL同步、云端唯一运行DB生成一致性快照回传，其它运行态无需同步。独立运维工具`nowledge-mem-hermes/deployment/hermes-sqlite-snapshot.py`已亲审接收，安装`~/scrips/hermes-sqlite-snapshot.py`，SHA `6d9d25bf78c526692dde70618f638b837be960e4fc6b134a80892a8a0852d237`；不依赖Hermes、不进入Provider工具/Prompt、不激活后台机制。
+- 精确DB名单、同步外暂存、完成后固定ZIP原子发布；接收端全包及SQLite验证后提升同步外current/previous已验槽，坏包不覆盖已验副本；恢复只到不存在的新根。9个不同真实SQLite节点通过，含WAL并发及损坏/半包拒绝；Ruff/结构指标通过，未重复全套。原始证据位于并列主仓ignored `deployment-preparation/`。
+- 本工具是固定v5之后运维筹备增量，不能冒称v5门禁覆盖。两个新Home仅配置/插件；用户SOUL/Alex历史库保持。生产模型/联合Idle/快照频率及正式DB清单未定，无云端/SSH/Mutagen/定时器/服务启动，未对真实Home执行快照或恢复。
+
 ## 用户最新授权：独立工具与NM Thread分叉同步
 
 - 用户指定NM独立小工具放运行主机 `~/scrips/`，本机／云端一致，不依赖Hermes／插件目录／HERMES_HOME／cwd。metadata owner实施单一独立创建工具，正文与通用Metadata由调用方提供，既有一次POST／真实ID回读／unknown不盲重试约束保持；无真实NM写入前先受控验收。

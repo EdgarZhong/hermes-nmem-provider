@@ -6,6 +6,7 @@
 |---|---|
 | 个人NM设计与接口边界 | [PHASE3.md](nowledge-mem-hermes/docs/PHASE3.md)（上半部§1–7；下半部历史参考） |
 | 已有插件结构、安装入口与本地测试命令 | [插件README](nowledge-mem-hermes/README.md) |
+| SQLite一致性快照、完整验证与离线恢复工具（独立于Provider） | [hermes-sqlite-snapshot.py](nowledge-mem-hermes/deployment/hermes-sqlite-snapshot.py)，部署至 `~/scrips/`；明确DB清单，复用文件同步通道，无后台任务 |
 | 当前进度、验收边界与交接 | [CLAUDE.md](CLAUDE.md) |
 | 协作规则与开发闭环 | [AGENTS.md](AGENTS.md) |
 | 历史版本测试证据 | [TEST_REPORT.md](nowledge-mem-hermes/docs/TEST_REPORT.md) |
