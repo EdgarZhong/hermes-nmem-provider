@@ -96,7 +96,15 @@ Spaces are managed in NM; Hermes profiles are managed in Hermes. The link is one
 - A newly created NM space is empty; existing Memories/Threads remain in Default until moved explicitly.
 - NM connection URL/key remain global (`~/.nowledge-mem/config.json` / `NMEM_API_URL` / `NMEM_API_KEY`). A profile can select a different space, not a different NM account.
 
-The provider's Bundle, recall client and Thread client are all constructed with the resolved space. For the agent's **manual** `nmem` commands, there is no wrapper: the system prompt's `Active space` section requires explicit `--space "<space>"` on every command and forbids access to another space unless the user explicitly asks. Without that prompt constraint, ambient CLI state could target another lane.
+By default the provider's Bundle, recall client and Thread client use the resolved `space`. An optional `thread_sync_space` string overrides only automatic Thread synchronization; Bundle, recall and the model's Active space keep using `space`. For the agent's **manual** `nmem` commands, there is no wrapper: the system prompt's `Active space` section requires explicit `--space "<space>"` on every command and forbids access to another space unless the user explicitly asks. Without that prompt constraint, ambient CLI state could target another lane.
+
+To keep a study profile's context and Memory operations in its study Space while automatically synchronizing Threads to Default, use:
+
+```json
+{"space": "考研复习", "thread_sync_space": "default"}
+```
+
+`thread_sync_space` accepts the existing NM Space names/aliases and Default; an explicit empty string also selects Default and clears ambient Space state. Omit the key to inherit `space` and preserve the exact legacy receipt key, including the distinction between unresolved `null`, blank and named Default. A present non-string value (including JSON `null`) rejects initialization safely. This optional override is configured directly in the profile JSON; the existing setup form is unchanged. It applies at initialization, with no live switching or migration of old Threads, receipts or Memories. The selected synchronization Space is used consistently for uploads, readback, fork anchors, pending writes, receipts and cold-instance observations. It does not change manual Memory targets, approval rules or any model prompt. With an explicit override and no matching local ledger, an exact-ID read must confirm remote absence before the first import. An existing Thread (in any Space) or an inconclusive lookup pauses sync instead of adopting or moving it. This read uses the existing client transport; no new migration path is introduced. The read-before-import check is not an atomic server-side create reservation.
 
 The provider requires a profile with the `terminal` tool (to run `nmem`) and the `memory` toolset (Hermes gates the provider prompt block through it). It does not register model-callable NM tools, MCP, or a fallback reader.
 

@@ -142,7 +142,9 @@ Main把获批范围、工具实际执行成功／部分／失败／未知写在�
 
 初始Thread key保持`hermes-personal-<identity>`：合格Main用conversation_ref；独立Cron／普通原生fallback用physical session_id。new/reset/fork的独立Conversation按现有身份分开，合法compaction continuation读取同一Conversation的当前Thread账本。Thread locator不能代替Hermes来源地址；既有命名不承诺复制相同Conversation Ref到同NM Space的不同Profile具有不同远端Thread。
 
-收据仍在`$HERMES_HOME/nowledge-mem-personal/receipts.sqlite3`，按endpoint、Space、初始Thread定位当前分支。保留原`receipts`已ACK的完整合法路径指纹；同库`thread_sync`仅补充当前远端Thread、远端条数、各合法消息的本地身份、实际所在Thread及位置、内容／时间指纹和未确认操作，不保存对话正文或凭据。已有仅ACK账本通过正式CLI只读核对后使用，不清空Profile、不迁移或覆写旧远端。
+**2026-10-19 用户确认的独立同步目标：** profile 配置可选字符串 `thread_sync_space` 仅覆盖自动 NM Thread 同步的目标 Space；未配置时继承原 `space`，包括原始 `None`／空串／显式 Default 的收据键语义，保持既有行为。显式字符串沿既有名称／别名解析，`"default"` 或空串选 Default；存在但非字符串（含 JSON null）严格拒绝初始化并清除旧 client。上传、远端回读及全部分页、分叉锚点、pending、receipt 与冷启动 observation 一致使用该同步目标。Bundle、Recall、模型 Active space、手动 Memory 创建目标与批准策略均仍沿原 `space`，所有 Prompt 文本保持。配置仅初始化生效，无热切换；不迁移旧 Thread、收据或 Memory。study 新 Home 的配置示例为 `{"space":"考研复习","thread_sync_space":"default"}`；这是固定 v5 后的运维／配置增量，旧门禁结论不变。 显式覆盖且尚无匹配本地账本时，首批导入前复用现有client传输按精确Thread ID只读确认不存在（不带Space guard，`limit=0`）；只有明确HTTP404允许导入，发现任意Space已有同ID或查询不明则暂停，不认领、不移动。已有匹配账本沿原同步机制；此检查不是服务器原子创建预留，不承诺跨独立客户端竞态的全局排他。
+
+收据仍在`$HERMES_HOME/nowledge-mem-personal/receipts.sqlite3`，按endpoint、选定同步Space、初始Thread定位当前分支。保留原`receipts`已ACK的完整合法路径指纹；同库`thread_sync`仅补充当前远端Thread、远端条数、各合法消息的本地身份、实际所在Thread及位置、内容／时间指纹和未确认操作，不保存对话正文或凭据。已有仅ACK账本通过正式CLI只读核对后使用，不清空Profile、不迁移或覆写旧远端。
 
 prefix不变时仅追加suffix；正式`threads import --file`新建Thread首批不带checkpoint，后续使用真实远端条数（包含插件首条说明）及稳定idempotency key。原严格服务ACK通过，或先前unknown批次经正式show精确确认后才推进收据；上传前先持久记录本次候选Thread身份和批次指纹。超时、异常、错ACK或负ACK保持收据不动；后续完成边界只读`threads show`核实该Thread完整内容，确证与待定批次一致后才接纳结果，否则保持暂停，不重放未知上传、不换新Thread绕过unknown。会话结束只能处理原已准入完成快照，不能准入未完成尾部。
 
@@ -223,7 +225,7 @@ recall across agent harnesses; they are not Memory and not original Conversation
 | Hermes memory_provider/memory_manager | toolset gate、prefetch admitted input、api_content实际存活、prompt重建边界、完成Turn及egress规则 |
 | 窄职责创建脚本 / Provider提示 | 一次正式API携批准正文／标题／类型标签／Space／hermes_provenance创建，真实ID和Metadata回读；partial／unknown不盲重试；普通字段仍走CLI修改，仅创建时Metadata错误须获批删除后全新创建；不注册／安装nm-cli Skill |
 | Thread receipt | 明确ACK后推进、最长共同前缀分叉续接、原生NM消息锚点、unknown只读确认与不盲写 |
-| Hermes profile ↔ NM space | 每个 profile 的 `$HERMES_HOME/nowledge-mem.json` 的 `space`；host 传 `hermes_home`；未配置用 NM Default；Hermes clone 会复制 `<provider>.json`；手动 CLI 必须显式 `--space` |
+| Hermes profile ↔ NM space | 每个 profile 的 `$HERMES_HOME/nowledge-mem.json` 的 `space`；可选 `thread_sync_space` 仅覆盖自动Thread；host 传 `hermes_home`；原Space未配置用 NM Default；Hermes clone 会复制 `<provider>.json`；手动 CLI 必须显式 `--space` |
 | live profile | Hermes正式运行／部署目标为云端；部署时复用实际运行主机的NM配置。仅按明确部署授权改profile；本次文档冻结不部署、不改NM治理设置、不写入Memory |
 
 源码承接基线为`EdgarZhong/hermes-nmem-provider`的`f9733fcb31a0e6f468eabe6419cb76444fe16b30`，本地目录`/Users/edgar/code/hermes-nmem-provider`。本轮未验证NM服务可用性、实时缓存行为、网络延迟或服务端去重；不得把旧测试报告当作当前联调证据。旧PHASE3替换session_search的设想已由公共07的独立conversation_history方案覆盖，不再实施。
@@ -257,11 +259,13 @@ Space 在 NM 里管理，profile 在 Hermes 里管理；两者通过每个 profi
 
 - Host 在 provider `initialize` 时传入当前 profile 的 `hermes_home`；插件只读该 home 下的 `nowledge-mem.json`。profile 名只由 host helper 提供显示标签，不参与选 space；不需要中央映射表或路径解析。
 - `space` 是 NM 的可见空间名或 alias。`{"space": ""}` 或省略该键使用 NM **Default**。
-- Provider 在构造 HTTP 和 CLI client 时把未解析的 `None` 归一成显式空串，从而清掉 ambient `NMEM_SPACE` / `NMEM_SPACE_ID`，保证 Bundle、Recall、Thread 三条自动路径都落在 Default，而不是各走各的。
+- Provider 在构造 HTTP 和 CLI client 时把未解析的 `None` 归一成显式空串，从而清掉 ambient `NMEM_SPACE` / `NMEM_SPACE_ID`，保证 Bundle、Recall 及未独立覆盖的Thread都落在 Default，而不是各走各的。
 - 本个人 fork 的 `_resolve_space` 只读 profile 配置（`space`、`space_by_identity`、`space_template`），**故意忽略进程级 `NMEM_SPACE` / `NMEM_SPACE_ID`**；否则一个 profile 的环境变量会漏进另一个 profile。未匹配即 Default。
-- receipts 的 key 继续使用原始 `_resolved_space`（未配置时为 `None`），避免已有 Default 归档的 key 从 `null` 变成 `""` 而触发重传。
+- 未配置 `thread_sync_space` 时，receipts 的 key 继续使用原始 `_resolved_space`（未配置时为 `None`），避免已有 Default 归档的 key 从 `null` 变成 `""` 而触发重传。配置覆盖时使用该同步Space的原始字符串（去首尾空白），不自动合并 Default 的不同配置键。
 - Hermes `profile create --clone` 会按 `<provider>.json` 约定复制 `nowledge-mem.json`；clone 后要改 space，编辑新 profile 的文件即可。
 - NM 连接 URL/key 仍是全局的（`~/.nowledge-mem/config.json` / `NMEM_API_URL` / `NMEM_API_KEY`）；per-profile 只变 space，不支持独立 NM 账号/key。
+
+**独立自动Thread目标（2026-10-19）：** 可在同一文件直接配置 `thread_sync_space`，规则见 §5。省略该键继承 `space`；显式空串或 `"default"` 使用 Default；非字符串（包括 null）拒绝初始化。它仅改变自动同步 client 及对应账本，不改 Bundle／Recall／Active space／手动写入目标，也不改任何 Prompt。初始化后不热切换、不迁移旧数据；现有 setup 表单不变。
 
 **自动归档开关（2026-10-18）：** 同一 profile 文件支持 `archive_enabled`，只接受 JSON 布尔值，省略时默认 `true`，保留既有 Main/Cron 完成 Turn 的 Thread 归档行为。设为 `false` 时禁止归档接纳、会话结束重试及实际 Thread 上传，不创建或推进归档收据；Bundle 与输入前 Recall 保持正常。配置在 Provider 初始化时读取，变更后需新建运行实例或重启所属实例，不在活动会话中热更新。
 
@@ -279,7 +283,7 @@ Provider 在静态 guidance 中注入 `## Active space`，包含当前 profile �
 
 - 默认只访问绑定 space；不得以任何形式读取、搜索或写入其他 space。
 - 用户明确要求某个 space 时，只在该 space 执行用户要求的那次读取或写入，不顺带访问其他 space。
-- Provider 自己的 Bundle、Recall、Thread client 在代码里已绑定 space。
+- Provider 自己的 Bundle、Recall client 在代码里绑定 `space`；Thread 默认同目标，只有显式 `thread_sync_space` 才独立选择自动同步目标。该覆盖不改变此处模型的 Active space 权限。
 - 模型手动运行 `nmem` 时没有我们的 wrapper，必须在 system prompt 中要求每次显式带 `--space "<space>"`；否则 CLI 可能落到 Default 或 ambient。Active space 段已包含这条要求。
 - 不提供 fallback reader、`nmem_*` 模型工具或 MCP。profile 没有 `terminal` 时，模型无法手动读 pointer；只有自动 Bundle/Recall 仍可工作。
 - `memory` toolset 必须保留；Hermes 以它 gate provider 的 system prompt block。若关闭，`prefetch` 仍可能注入 pointer，但静态 `Memory check`/`Active space` 规则不在。
@@ -311,7 +315,7 @@ python3 nowledge-mem-hermes/install_personal.py --home "<profile-home>" --apply
 
 ### 8.6 验证清单
 
-- 两 profile fixture：A 不配置 space，B 配置一个合成 space；断言 A 的 Bundle/Recall/Thread 使用 Default，B 的分别使用该 space，且没有跨 lane。
+- 两 profile fixture：A 不配置 space，B 配置一个合成 space；未配置同步覆盖时断言 A 的 Bundle/Recall/Thread 使用 Default，B 的分别使用该 space。配置 `thread_sync_space` 后另验自动Thread的写入／远端分页／分叉／unknown／账本／冷观察一致使用覆盖目标，Bundle／Recall和完整Prompt不变。
 - 断言静态 prompt 含 `## Memory check`、`## Active space`、`Memory check: use nmem CLI if needed.`，且不含 Secretary、Notebook 或旧召回术语。
 - 断言 pointer payload 末尾只有短 `Memory check` 锚点，不再带长提醒；空结果和不可用结果也带锚点。
 - 真实 NM 只读：`nmem spaces list` 确认目标 space；用真实 endpoint 验证 Bundle 的 `space_id`、CLI recall 的 `NMEM_SPACE`、Thread append 的 `space_id` 都落在同一 lane。

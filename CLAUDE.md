@@ -4,6 +4,15 @@
 
 暂无。2026-10-18窄helper一次正式API创建并携Metadata为用户明确修订，不是Agent自主扩大路线。
 
+## study 自动 Thread 同步 Space 拆分（2026-10-19；功能保留，study当前继承原Space）
+
+- 用户最新纠正：拆分功能保留，当前study的自动Thread继续考研Space，不投递Default。待部署Home `/Users/edgar/.hermes_profiles/study` 保持 `space:"space"`、`archive_enabled:true`，不设置 `thread_sync_space`；Bundle、Recall、Active space及Thread均继承原Space。可选字段未配置保持旧Space与收据键；显式字符串仍支持名称／别名及Default，空串表示Default，错误类型拒绝初始化。
+- 本包仅个人 Provider、对应测试与配置文档；不修改任何 Prompt、Memory helper／批准策略、公共核心或真实运行数据，不迁移旧 Thread／收据／Memory；初始化生效，无热切换。它是固定 v5 后的配置增量，不回写旧门禁结论。
+- 实施基线个人 `4d4a00e56316119ac2e66bc8ffe2c98ece64eaa5`、公共 runner `c80e0d02b51ec2ddfe5feced776c842480f84516`；定向 RED／修复证据与精确补丁存公共 ignored `.hermes-dev/product-intent-review-20261018/study-thread-space-split/`。主会话已亲审接收原6文件及21节点证据；本次获授权只安装新study插件并提交原6个源文件，保留既有hook自动push。实际安装／提交／远端HEAD见同目录 `installation-and-commit.json`。
+- canonical runner 配置／链路定向 19 个顶层节点通过（Provider 9、正式Thread链路10，runner墙时3.5秒）；含新配置兼容／错误类型／重初始化、Default未知上传分页确认、真实消息锚点分叉与后续冷实例增量、原Space的Bundle／Recall及Prompt保持。原始RED与两次测试夹具修正失败保留。随后补充跨Space同ID保护：显式覆盖且无匹配账本时仅明确404允许首批导入；已有任意Space同ID／查询不明均暂停，不认领或迁移。新增2个负例RED后，受影响5节点2.8秒通过（与19节点合计21个不同顶层节点）；无新大型回归。导入前只读检查不保证服务器原子创建排他。不是产品真实NM／模型验收。
+- 冻结Core Ruff配置、C901≤20、函数≤300行／嵌套≤6／文件≤2000和diff检查通过；全部模块常量及Prompt构建函数与个人基线AST一致。仅直接JSON配置新增可选键，setup表单保持；无真实NM读写、服务、UI／显示状态操作。完整报告与指纹见上述证据目录 `report.md`／`manifest.json`。
+- 新study已由正式installer preview／apply完成10个FILES插件安装，源码／落盘SHA全匹配；config.yaml、.env、nowledge-mem.json的bytes及mode保持，未新增override、默认模型或Idle参数。两份SOUL未打开／修改，未接触Alex／旧测试Profile／DB／全局registry。仅准备静态云端installer包，未SSH／Mutagen／服务启动；既有21节点不重复运行。
+
 ## 当前交付与新部署筹备（2026-10-19）
 
 - 固定v5产品意图PI01–26已由独立Astra Verification及6.1 Validation全范围PASS；主仓E04旧分支尾部读取缺陷已修复并经原A冷UI关闭。下方v3/v4及旧NOT PASS均保留历史时点，不作为当前状态。当前判定与唯一总体看板在并列主仓CLAUDE和`.autonomous/20261018-product-intent-review/final-delivery.md`。

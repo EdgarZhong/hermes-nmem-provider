@@ -12,10 +12,11 @@ import sqlite3
 import threading
 from pathlib import Path
 from typing import Any
+from urllib.parse import quote
 
 from .client import _resolve_nmem
 from .provider import NowledgeMemProvider
-from .personal_client import PersonalMemClient
+from .personal_client import MemHTTPError, PersonalMemClient
 from .personal_thread_sync import ThreadSyncUnconfirmed, sync_thread
 from .personal_scope import (HistoryReconciliationRequired, Scope, clean_transcript,
                              completed_history_rows, history_rows, resolve_scope)
@@ -221,6 +222,8 @@ class PersonalNowledgeMemProvider(NowledgeMemProvider):
         self._policy_lock = threading.RLock()
         self._context_epoch = 0
         self._recall_client = None
+        self._thread_sync_client = None
+        self._thread_sync_space = None
         self._config = {}
         self._disabled = True
         self._archive_enabled = False
@@ -282,7 +285,8 @@ class PersonalNowledgeMemProvider(NowledgeMemProvider):
             self._accepted_archive = None
             self._archive_observations = {}
             self._context_epoch += 1
-            self._client = self._recall_client = None
+            self._client = self._recall_client = self._thread_sync_client = None
+            self._thread_sync_space = None
             self._resolved_space = None
             self._home = str(kwargs.get("hermes_home") or "")
             self._physical_session = session_id or ""
@@ -296,6 +300,8 @@ class PersonalNowledgeMemProvider(NowledgeMemProvider):
             archive_enabled = config.get("archive_enabled", True)
             if not isinstance(archive_enabled, bool):
                 raise ValueError("archive_enabled must be a boolean")
+            if "thread_sync_space" in config and not isinstance(config["thread_sync_space"], str):
+                raise ValueError("thread_sync_space must be a string")
             self._config = config
             self._timeout = _number(config, "timeout", 8, 1, 60)
             self._recall_timeout = _number(config, "recall_timeout", 2, 0.1, 5)
@@ -309,8 +315,14 @@ class PersonalNowledgeMemProvider(NowledgeMemProvider):
             self._client_space = "" if self._resolved_space is None else self._resolved_space
             self._space_label = self._client_space or "Default"
             self._profile_name = self._profile_name_for_home(self._home)
-            self._client = PersonalMemClient(timeout=self._timeout, space=self._client_space)
-            self._recall_client = PersonalMemClient(timeout=self._recall_timeout, space=self._client_space)
+            # Omission preserves the raw selector (including None) used by old receipts.
+            self._thread_sync_space = (config["thread_sync_space"].strip()
+                                       if "thread_sync_space" in config else self._resolved_space)
+            client = PersonalMemClient(timeout=self._timeout, space=self._client_space)
+            recall_client = PersonalMemClient(timeout=self._recall_timeout, space=self._client_space)
+            thread_client = (client if self._thread_sync_space == self._resolved_space else
+                PersonalMemClient(timeout=self._timeout, space=self._thread_sync_space))
+            self._client, self._recall_client, self._thread_sync_client = client, recall_client, thread_client
             self._archive_enabled = archive_enabled
             self._disabled = False
             # No Bundle/network read here: cron is sync-only; new rows may not exist yet.
@@ -465,7 +477,7 @@ class PersonalNowledgeMemProvider(NowledgeMemProvider):
         return self._archive_cleaned(scope, cleaned, message_uids=message_uids)
 
     def _receipt_key(self, scope):
-        return json.dumps([self._client._api_url(), self._resolved_space, scope.thread_id])
+        return json.dumps([self._thread_sync_client._api_url(), self._thread_sync_space, scope.thread_id])
 
     def _observation_key(self, scope):
         return hashlib.sha256(json.dumps([str(Path(self._home).resolve()), self._receipt_key(scope)]).encode()).hexdigest()
@@ -551,16 +563,41 @@ class PersonalNowledgeMemProvider(NowledgeMemProvider):
                 level="warn" if observation["state"] == "paused" else "info")}
         return result
 
+    def _check_thread_sync_target(self, scope, state_path):
+        """A new override ledger must not adopt or relocate an existing global Thread ID."""
+        if "thread_sync_space" not in self._config:
+            return
+        key = self._receipt_key(scope)
+        if state_path.is_file():
+            with closing(sqlite3.connect(state_path.resolve().as_uri() + "?mode=ro", uri=True)) as db:
+                tables = {row[0] for row in db.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table' AND name IN ('receipts','thread_sync')")}
+                for table in ("receipts", "thread_sync"):
+                    if table in tables and db.execute(f"SELECT 1 FROM {table} WHERE scope=?", (key,)).fetchone():
+                        return
+        try:
+            # An unguarded exact-ID read detects a collision in another Space.
+            # Reuse the existing transport's typed 404; CLI stderr is not an absence contract.
+            self._thread_sync_client.request_json("GET", "/threads/" + quote(scope.thread_id, safe="") + "?limit=0")
+        except MemHTTPError as exc:
+            if exc.status == 404:
+                return
+            raise ThreadSyncUnconfirmed("thread_sync_target_unconfirmed") from exc
+        except Exception as exc:
+            raise ThreadSyncUnconfirmed("thread_sync_target_unconfirmed") from exc
+        raise ThreadSyncUnconfirmed("thread_sync_target_existing")
+
     def _archive_cleaned(self, scope: Scope, cleaned, *, message_uids=None):
         if self._disabled or not self._archive_enabled:
             return {"status": "skipped"}
         state_dir = Path(self._home) / "nowledge-mem-personal"
-        state_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
         state_path = state_dir / "receipts.sqlite3"
+        self._check_thread_sync_target(scope, state_path)
+        state_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
         with closing(sqlite3.connect(state_path, timeout=5)) as db, db:
             os.chmod(state_path, 0o600)
             return sync_thread(db, key=self._receipt_key(scope), thread_id=scope.thread_id,
-                cleaned=cleaned, client=self._client, cleaner=self._clean_session_messages,
+                cleaned=cleaned, client=self._thread_sync_client, cleaner=self._clean_session_messages,
                 message_uids=message_uids,
                 title=scope.title or self._build_thread_title(cleaned),
                 acknowledged=self._archive_acknowledged, failure_category=self._archive_failure_category)
@@ -624,7 +661,8 @@ class PersonalNowledgeMemProvider(NowledgeMemProvider):
             self._context_epoch += 1
             self._disabled = True
             self._archive_enabled = False
-            self._client = self._recall_client = None
+            self._client = self._recall_client = self._thread_sync_client = None
+            self._thread_sync_space = None
             self._accepted_archive = None
             self._archive_observations = {}
             self._resolved_space = None

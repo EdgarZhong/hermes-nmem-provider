@@ -29,7 +29,11 @@ class ThreadHandler(FIXTURE.Handler):
         payload = json.loads(self.rfile.read(int(self.headers['Content-Length'])))
         self.calls.append(('POST', self.path, payload))
         identity = payload['thread_id']
-        saved = self.threads.setdefault((payload.get('space_id'), identity), [])
+        # Model the service's canonical storage identity, distinct from the CLI selector.
+        selector = payload.get('space_id')
+        space = {'default': None, 'Default': None, 'Study alias': 'fixture-space',
+                 'Fixture Space': 'fixture-space'}.get(selector, selector)
+        saved = self.threads.setdefault((space, identity), [])
         expected = payload.get('expected_message_count', 0)
         if len(saved) != expected:
             reply = {'success': False, 'thread_id': identity, 'error': 'checkpoint mismatch'}
@@ -76,6 +80,15 @@ class ThreadHandler(FIXTURE.Handler):
         space = query.get('space_id', [None])[0]
         space = None if space == 'default' else space
         rows = self.threads.get((space, identity))
+        if 'space_id' not in query:
+            located = [(lane, value) for (lane, name), value in self.threads.items() if name == identity]
+            if located:
+                space, rows = located[0]
+        if self.mode == 'lookup-failure':
+            self.send_response(503)
+            self.end_headers()
+            self.wfile.write(b'{"error":"fixture unavailable"}')
+            return
         if rows is None:
             self.send_response(404)
             self.end_headers()
@@ -131,6 +144,110 @@ class ThreadForkSyncTests(unittest.TestCase):
         with closing(sqlite3.connect(self.home / 'nowledge-mem-personal/receipts.sqlite3')) as db:
             row = db.execute('SELECT state,pending FROM thread_sync').fetchone()
             return json.loads(row[0]), json.loads(row[1]) if row[1] else None
+
+    def test_thread_sync_override_existing_global_identity_never_moves_thread(self):
+        original = self.provider()
+        rows = self.add_turn()
+        self.assertEqual(original.sync_turn("q", "a", messages=rows)["status"], "acknowledged")
+        old_threads, old_receipts = copy.deepcopy(ThreadHandler.threads), self.receipts()
+        override = self.provider(thread_sync_space="default")
+        result = override.sync_turn("q", "a", messages=rows)
+        self.assertEqual(result["status"], "unacknowledged")
+        self.assertEqual(result["category"], "thread_sync_target_existing")
+        self.assertEqual(ThreadHandler.threads, old_threads)
+        self.assertEqual(self.receipts(), old_receipts)
+        self.assertEqual(len(self.writes()), 1)
+
+    def test_thread_sync_override_lookup_failure_does_not_write(self):
+        override = self.provider(thread_sync_space="default")
+        rows = self.add_turn()
+        ThreadHandler.mode = "lookup-failure"
+        result = override.sync_turn("q", "a", messages=rows)
+        self.assertEqual(result["status"], "unacknowledged")
+        self.assertEqual(result["category"], "thread_sync_target_unconfirmed")
+        self.assertEqual(self.writes(), [])
+        self.assertEqual(self.receipts(), [])
+
+    def test_thread_sync_space_omission_keeps_legacy_receipt_keys(self):
+        for index, selector in enumerate((None, "", "default", "Study alias")):
+            with self.subTest(selector=selector):
+                sid = f"legacy-{index}"
+                p = self.provider(sid=sid, space=selector)
+                if selector is None:
+                    (self.home / "nowledge-mem.json").write_text("{}", encoding="utf-8")
+                    p.initialize(sid, hermes_home=str(self.home), platform="cli")
+                rows = self.add_turn(sid=sid)
+                self.assertEqual(p.sync_turn("q", "a", messages=rows)["status"], "acknowledged")
+                expected_key = json.dumps([self.url, selector, p._scope().thread_id])
+                self.assertIn(expected_key, [key for key, _ in self.receipts()])
+                before = len(self.writes())
+                self.assertEqual(p.sync_turn("q", "a", messages=rows)["status"], "unchanged")
+                self.assertEqual(len(self.writes()), before)
+
+    def test_thread_sync_default_formal_hook_unknown_pagination_fork_and_cold_state(self):
+        p = self.provider(space="Study alias", thread_sync_space="default")
+        rows = []
+        for number in range(1, 53):
+            rows.extend(self.add_turn(number=number))
+        agent = self.feedback_agent(p)
+        ThreadHandler.mode = "disconnect"
+        self.completed_feedback(agent, rows)
+        self.assertEqual(self.receipts(), [])
+        pending_id = self.state()[1]["state"]["thread_id"]
+        self.assertEqual(len(self.writes()), 1)
+        self.assertEqual(self.writes()[0][2]["space_id"], "default")
+        cold = self.provider(space="Study alias", thread_sync_space="default")
+        cold._check_cold_archive_observation(cold._scope())
+        self.assertEqual(cold._archive_observations[cold._observation_key(cold._scope())]["state"], "paused")
+        inherited = self.provider(space="Study alias")
+        inherited._check_cold_archive_observation(inherited._scope())
+        self.assertEqual(inherited._archive_observations, {})  # Another target's pending does not leak.
+        ThreadHandler.mode = None
+        confirmed = cold.sync_turn("q", "a", messages=rows)
+        self.assertEqual(confirmed["status"], "unchanged")
+        self.assertIn("当前分支", confirmed["feedback"].text)
+        self.assertEqual(len(self.writes()), 1)  # Confirm the unknown write; never replay it.
+        self.assertIsNone(self.state()[1])
+        self.assertEqual(json.loads(self.receipts()[0][0])[1], "default")
+        reads = [urlsplit(path) for method, path, _ in FIXTURE.Handler.calls
+                 if method == "GET" and "/threads/" in path]
+        self.assertTrue(any(parse_qs(path.query).get("offset") == ["100"] for path in reads))
+        self.assertTrue(all(parse_qs(path.query).get("space_id", ["default"]) == ["default"] for path in reads))
+        old_rows = copy.deepcopy(ThreadHandler.threads[(None, pending_id)])
+        self.edit("s1-52-user", "edited final question")
+        branch = cold.sync_turn("q", "a", messages=rows)["thread_id"]
+        self.assertNotEqual(branch, pending_id)
+        header, *suffix = self.writes()[-1][2]["messages"]
+        self.assertIn(old_rows[101]["id"], header["content"])
+        self.assertEqual([row["content"] for row in suffix], ["edited final question", "answer"])
+        self.assertEqual(ThreadHandler.threads[(None, pending_id)], old_rows)
+        next_rows = self.add_turn(number=53)
+        next_cold = self.provider(space="Study alias", thread_sync_space="default")
+        self.assertEqual(next_cold.sync_turn("q", "a", messages=rows + next_rows)["thread_id"], branch)
+        self.assertEqual(self.writes()[-1][2]["expected_message_count"], 3)
+        self.assertEqual({space for space, _ in ThreadHandler.threads}, {None})
+
+    def test_thread_sync_override_default_blank_and_alias_leave_context_cli_bound(self):
+        for index, (selector, stored) in enumerate((("", None), ("default", None), ("Study alias", "fixture-space"))):
+            with self.subTest(selector=selector):
+                sid = f"sync-lane-{index}"
+                p = self.provider(sid=sid, space="second-space", thread_sync_space=selector)
+                rows = self.add_turn(sid=sid)
+                self.assertEqual(p.sync_turn("q", "a", messages=rows)["status"], "acknowledged")
+                self.assertIn((stored, p._scope().thread_id), ThreadHandler.threads)
+                self.assertEqual(len(p._thread_sync_client.thread_messages(p._scope().thread_id)), 2)
+        p = self.provider(space="Study alias", thread_sync_space="default")
+        commands = []
+        def cli(argv, *, env, **kwargs):
+            commands.append((argv, env["NMEM_SPACE_ID"]))
+            result = ({"rendered_markdown": "Fixture stable context"} if "context" in argv
+                      else {"memories": [{"id": "study-memory", "title": "Study pointer"}]})
+            return FIXTURE.types.SimpleNamespace(returncode=0, stdout=json.dumps(result), stderr="")
+        with FIXTURE.patch.object(FIXTURE.U, "_resolve_nmem", return_value="/fixture/nmem"), \
+             FIXTURE.patch.object(FIXTURE.U, "_run_nmem", side_effect=cli):
+            self.assertIn("Fixture stable context", p.system_prompt_block())
+            self.assertIn("study-memory", p.prefetch("考研"))
+        self.assertEqual([space for _, space in commands], ["Study alias", "Study alias"])
 
     def test_edit_new_thread_native_anchor_header_suffix_then_incremental(self):
         p, notices = self.provider(), []

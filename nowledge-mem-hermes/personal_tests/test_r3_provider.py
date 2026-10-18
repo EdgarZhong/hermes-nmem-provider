@@ -121,6 +121,50 @@ class ProviderContextTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, 'archive_enabled must be a boolean'):
                     self.provider()
 
+    def test_thread_sync_space_override_preserves_context_and_prompt(self):
+        path = Path(self.home, "nowledge-mem.json")
+        path.write_text(json.dumps({"space": "Study alias"}), encoding="utf-8")
+        original = self.provider().system_prompt_block()
+        for selector in ("default", "", "  Second Space  "):
+            with self.subTest(selector=selector):
+                path.write_text(json.dumps({"space": "Study alias", "thread_sync_space": selector}), encoding="utf-8")
+                provider = self.provider()
+                self.assertEqual(provider.system_prompt_block(), original)
+                self.assertEqual(provider._client._space, "Study alias")
+                self.assertEqual(provider._recall_client._space, "Study alias")
+                self.assertEqual(provider._thread_sync_client._space, selector.strip())
+
+    def test_thread_sync_space_removed_on_reinitialize_inherits_new_profile(self):
+        path = Path(self.home, "nowledge-mem.json")
+        path.write_text(json.dumps({"space": "Study alias", "thread_sync_space": "default"}), encoding="utf-8")
+        provider = self.provider()
+        prior_sync = provider._thread_sync_client
+        path.write_text(json.dumps({"space": "Second Space"}), encoding="utf-8")
+        provider.initialize("other", hermes_home=self.home, platform="cli")
+        self.assertIsNot(provider._thread_sync_client, prior_sync)
+        self.assertIs(provider._thread_sync_client, provider._client)
+        self.assertEqual(provider._thread_sync_space, "Second Space")
+        self.assertEqual(provider._recall_client._space, "Second Space")
+        provider.shutdown()
+        self.assertIsNone(provider._thread_sync_client)
+
+    def test_thread_sync_space_invalid_reinitialize_clears_all_profile_clients(self):
+        for value in (None, True, False, 0, 1, [], {}):
+            with self.subTest(value=value):
+                path = Path(self.home, "nowledge-mem.json")
+                path.write_text(json.dumps({"space": "Study alias", "thread_sync_space": "default"}), encoding="utf-8")
+                provider = self.provider()
+                path.write_text(json.dumps({"thread_sync_space": value}), encoding="utf-8")
+                with self.assertRaisesRegex(ValueError, "thread_sync_space must be a string"):
+                    provider.initialize("other", hermes_home=self.home, platform="cli")
+                self.assertIsNone(provider._client)
+                self.assertIsNone(provider._recall_client)
+                self.assertIsNone(provider._thread_sync_client)
+                self.assertEqual(provider.system_prompt_block(), "")
+                self.assertEqual(provider.prefetch("之前"), "")
+                self.assertEqual(provider.sync_turn("q", "a", messages=[])["status"], "skipped")
+                self.assertIsNone(provider.on_session_end([]))
+
     def test_system_prompt_is_nm_only_and_has_memory_check(self):
         text = self.provider().system_prompt_block()
         for expected in ("# Nowledge Mem (NM)", "## Active space", "## Layers",
