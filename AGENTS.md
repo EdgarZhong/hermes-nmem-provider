@@ -5,6 +5,7 @@
 - 个人工作仅修改nowledge-mem-hermes及必要根文档；不改其他集成、发布注册或用户运行配置。不将个人NM依赖加入公开Secretary核心。
 - 目标设计查nowledge-mem-hermes/docs/PHASE3.md现行§1–7；其历史附录与上游指南仅作参考，不能新增、覆盖已冻结要求或门禁。History由独立Secretary核心实现，本插件不monkey-patch。
 - 保留单一Provider和已有helper边界。凭据不进入Git、日志或文档；复用运行主机NM配置，不复制开发机配置。未获明确授权不写真实NM数据、不改治理政策。
+- 用户明确：NM创建等独立小工具放运行主机 `~/scrips/`，本机／云端一致；不依赖Hermes、插件目录、`HERMES_HOME`、仓库cwd或Hermes模块。工具只接收普通内容与通用Metadata JSON，由调用方提供来源，不自行读取Hermes状态。仅创建走窄工具，其余操作官方CLI；不借此搬迁无关脚本／修改全局配置。
 - 开发闭环：读现行依据→检查工作区并保护已有修改→更新CLAUDE并说明意图→最小修改→按影响做必要检查→亲自review→同步文档和阶段提交。纯文档只检查差异、引用及一致性，不启动产品测试。具体轮次的用户验收例外以轮次索引为准。
 - 提交仅包含任务授权内容。沿用户提交后自动同步规则，保留已有hook，安装主仓库.githooks/post-commit到本仓库实际hooks路径；不强推、不自动合并。代码同步不代表部署或验收通过。
 - 自主轮次按autonomous-run套件；当前轮次索引与冻结版本位于并列hermes-secretary仓库.autonomous目录，入口由CLAUDE记录。不得借上游发布约定扩张任务。

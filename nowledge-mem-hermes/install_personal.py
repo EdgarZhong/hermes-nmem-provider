@@ -11,7 +11,7 @@ import time
 from pathlib import Path
 
 FILES = ("__init__.py", "plugin.yaml", "provider.py", "client.py", "skill_outcome.py",
-         "personal_provider.py", "personal_client.py", "personal_scope.py", "personal_cli.py")
+         "personal_provider.py", "personal_client.py", "personal_scope.py", "personal_thread_sync.py", "personal_cli.py")
 
 
 def _yaml():
@@ -40,20 +40,6 @@ def load_config(text):
     if memory.get("provider") not in (None, "", "default", "builtin", "built-in", "none", "nowledge-mem"):
         raise ValueError("Another memory provider is selected; refusing to replace it")
     value["memory"] = {**memory, "provider": "nowledge-mem", "memory_enabled": False, "user_profile_enabled": False}
-    skills = value.get("skills", {})
-    if not isinstance(skills, dict):
-        raise ValueError("skills config must be an object")
-    external = skills.get("external_dirs", [])
-    if isinstance(external, str):
-        external = [external]
-    if not isinstance(external, list) or any(not isinstance(entry, str) for entry in external):
-        raise ValueError("skills.external_dirs must be a path or a list of paths")
-    # Native roots are home-relative, so profile clones keep their own installed skill.
-    plugin_skills = "plugins/nowledge-mem/skills"
-    external = list(external)
-    if plugin_skills not in external:
-        external.append(plugin_skills)
-    value["skills"] = {**skills, "external_dirs": external}
     return value
 
 
@@ -65,8 +51,6 @@ def install(home: Path, *, apply=False, source=None):
     for name in FILES:
         if not (source / name).is_file():
             raise ValueError(f"Incomplete plugin checkout: {name}")
-    if not (source / "skills" / "nm-cli" / "SKILL.md").is_file():
-        raise ValueError("Incomplete plugin checkout: nm-cli skill")
     config_path = home / "config.yaml"
     text = config_path.read_text(encoding="utf-8") if config_path.exists() else ""
     config = load_config(text)
@@ -88,7 +72,8 @@ def install(home: Path, *, apply=False, source=None):
     try:
         for name in FILES:
             shutil.copy2(source / name, stage / name)
-        shutil.copytree(source / "skills", stage / "skills")
+        if (source / "skills").is_dir():
+            shutil.copytree(source / "skills", stage / "skills")
         with tmp_config.open("w", encoding="utf-8") as handle:
             _yaml().dump(config, handle)
         os.chmod(tmp_config, 0o600)

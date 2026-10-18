@@ -141,6 +141,62 @@ class PersonalMemClient(NowledgeMemClient):
             raise RuntimeError("Memory ID mismatch")
         return result
 
+    def _thread_space_id(self):
+        """Resolve a configured name/alias with the same official CLI connection."""
+        if not self._has_explicit_space or not self._space:
+            return None
+        result = self._cli(["spaces", "show", "--", self._space])
+        if not isinstance(result, dict) or result.get("success") is False or result.get("error"):
+            raise RuntimeError("NM Thread Space resolution unconfirmed")
+        selected = result.get("space", result)
+        identity = selected.get("id") if isinstance(selected, dict) else None
+        if (not isinstance(identity, str) or not identity.strip()
+                or any(ord(char) < 32 or ord(char) == 127 for char in identity)):
+            raise RuntimeError("NM Thread Space identity unconfirmed")
+        return None if identity == "default" else identity
+
+    def _thread_page(self, thread_id, offset, limit, space_id):
+        cmd = ["threads", "show", thread_id, "--offset", str(offset), "--limit", str(limit)]
+        if space_id is not None or (self._has_explicit_space and self._space):
+            cmd.extend(["--space-id", space_id or "default"])
+        result = self._cli(cmd)
+        if (not isinstance(result, dict) or result.get("success") is False or result.get("error")
+                or result.get("id") != thread_id or "space_id" not in result):
+            raise RuntimeError("NM Thread identity unconfirmed")
+        actual_space = result["space_id"]
+        actual_space = None if actual_space in (None, "", "default") else actual_space
+        if actual_space != space_id:
+            raise RuntimeError("NM Thread Space unconfirmed")
+        rows, total = result.get("messages"), result.get("total_messages")
+        if (not isinstance(rows, list) or isinstance(total, bool) or not isinstance(total, int)
+                or total < 0 or len(rows) != min(limit, max(0, total - offset))
+                or result.get("message_count") != len(rows)):
+            raise RuntimeError("NM Thread page unconfirmed")
+        for index, row in enumerate(rows, offset):
+            identity = row.get("id") if isinstance(row, dict) else None
+            if (not isinstance(identity, str) or not identity.strip()
+                    or any(ord(char) < 32 for char in identity)
+                    or row.get("index") != index or row.get("order_index") != index
+                    or row.get("role") not in {"user", "assistant", "system"}
+                    or not isinstance(row.get("content"), str)):
+                raise RuntimeError("NM native message identity unconfirmed")
+        return rows, total
+
+    def thread_messages(self, thread_id, *, offset=0, limit=None):
+        """Read native Message IDs via official paginated CLI, never from import ACK."""
+        space_id = self._thread_space_id()
+        if limit is not None:
+            return self._thread_page(thread_id, offset, limit, space_id)[0]
+        messages, total = self._thread_page(thread_id, 0, 100, space_id)
+        while len(messages) < total:
+            page, current_total = self._thread_page(thread_id, len(messages), 100, space_id)
+            if current_total != total:
+                raise RuntimeError("NM Thread changed during pagination")
+            messages.extend(page)
+        if len({row["id"] for row in messages}) != len(messages):
+            raise RuntimeError("NM native message identity repeated")
+        return messages
+
     def import_thread(self, thread_id, messages, *, title=None, source="hermes",
                       expected_message_count=None, idempotency_key=None):
         """Use official file import, including its checkpointed suffix operation.

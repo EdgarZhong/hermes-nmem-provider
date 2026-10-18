@@ -6,7 +6,7 @@
 >
 > **2026-10-17 更新：** Provider prompt、pointer 术语、`Memory check` 锚点、profile→space 绑定和 Default 归一已按 §8 落地；个人测试与上游契约测试已跑，真实 NM、云端部署和真实写入仍未验证。
 
-> **2026-10-16 ask-and-align最新修订（用户明确）：** Hermes provenance写入NM Memory是必须保留的能力。取消该自定义字段的短暂决定已撤销。旧`personal_cli.py`直接调用API创建／编辑Memory的方案改为窄职责脚本：官方`nmem` CLI创建Memory → 取得真实返回主键 → 仅补写Hermes Metadata。端点、密钥与远程选择复用运行所在主机的NM配置，无第二套配置。Hermes正式运行／部署目标为云端；本次只完成文档冻结后暂停，不实施脚本或部署。
+> **2026-10-16 ask-and-align历史修订（2026-10-18仅创建路线已替换，见§4.1）：** Hermes provenance写入NM Memory是必须保留的能力。取消该自定义字段的短暂决定已撤销。旧`personal_cli.py`直接调用API创建／编辑Memory的方案改为窄职责脚本：官方`nmem` CLI创建Memory → 取得真实返回主键 → 仅补写Hermes Metadata。端点、密钥与远程选择复用运行所在主机的NM配置，无第二套配置。Hermes正式运行／部署目标为云端；本次只完成文档冻结后暂停，不实施脚本或部署。
 
 > **验收与部署边界（用户再次确认）：** 第三轮在本机隔离环境完成验收，以后部署云端；本地checkout与测试不代表正式运行位置，不宣称本轮已验证云端部署。真实服务测试数据写入仍须按本轮索引明确授权，不将一般实现授权解释为修改已有个人Memory或治理配置。
 >
@@ -14,7 +14,7 @@
 >
 > 公共 Conversation History 的工具与管理设计已移入 `/Users/edgar/code/hermes-secretary/docs/07-scheduler-notebook-noting-compaction-redesign.md`。本文只引用规范地址及授权边界，不再复制另一套 History Schema。原合并稿保留作研究来源，其旧三类持久化对象、Memo／Schedule 职责和旧 History 提示不再作为新实现要求。
 
-> 验收边界补充（2026-10-16，用户明确）：provenance小脚本不设独立严格验收，不安排真实NM测试写入；实施只做基本检查，实际联通问题留到以后云端部署处理。此例外仅限该小脚本，不取消provenance保存能力，也不扩展为其他Provider功能免验。Provider自动Thread归档的真实NM写入测试尚未获授权，本次不执行任何NM写入。
+> 历史验收边界补充（2026-10-16；本轮后续定向授权以主仓索引为准）：provenance小脚本不设独立严格验收，不安排真实NM测试写入；实施只做基本检查，实际联通问题留到以后云端部署处理。此例外仅限该小脚本，不取消provenance保存能力，也不扩展为其他Provider功能免验。Provider自动Thread归档的真实NM写入测试尚未获授权，本次不执行任何NM写入。
 
 ## 1. 职责与术语
 
@@ -91,18 +91,18 @@ Main先判断当前对话是否够用；确实缺个人背景才读相关 pointe
 
 通用链路由白板／07决定：Notebook现行条目或原文→聚合持久化提案→Main回读并提出具体内容／目标→用户明确批准→Main执行→正常Conversation留下结果→后续Noting结算。来源条目原位保留；入口包括用户`/propose-persistence`和整理后超限的主动提案指令。二者都只授权提案。
 
-- 个人适配额外检查可能重复／过时／矛盾的NM Memory，必要时提出具体合并或修订；不新增自动定时治理，也不由普通任务消息推导改Personal Premise／Space／Policy的权限。
+- 个人适配额外检查可能重复／过时／矛盾的NM Memory，必要时提出通过官方CLI合并或修订的具体方案；只有创建时Metadata错误，才提出获批删除后重新创建；不新增自动定时治理，也不由普通任务消息推导改Personal Premise／Space／Policy的权限。
 - 用户明确批准具体内容与目标后才能调用写入能力；提案、草稿、讨论、沉默、命令、容量提示都不是写入批准。CLI／API可用和可写凭据也不构成强制审批门禁。当前约束通过提示与流程保持，不假称已由代码保证用户同意。
 - 交付材料继承Notebook内容标签集合；implicit_gap在候选阶段已并为situation。直接原文无Notebook来源时不伪造继承。个人NM可以额外加入自身标签，不能丢掉来源类型。
-- 标签使用官方CLI已有的标签字段保存为`notebook:<type>`；本机`nmem 0.10.101`的add／update帮助已确认支持label／labels。实际运行主机仍须核对其版本；不为类型标签另造写入接口或复制Metadata字段。
+- 标签保存为`notebook:<type>`；本窄helper创建时使用正式API的`labels`字段，其它操作使用官方CLI，不复制进Metadata；正文、标题、标签等普通字段仍可经批准使用官方CLI修改；只有创建时Metadata错误，才须明确批准删除旧条目后全新创建。
 - 消息来源放custom Metadata `hermes_provenance`，正文保持自然语言。Memory可引用多个Conversation。来源位于合法路径不等于它支持该陈述，Main仍要查看用户限定、后续纠正与反证。
 
 ```json
 {
-  "id":"actual-memory-id-returned-by-official-cli",
+  "id":"actual-memory-id-returned-by-official-api",
   "title":"Approved personal understanding",
   "content":"The approved content, with its actual uncertainty and scope.",
-  "source":"hermes-secretary",
+  "source":"nmem-memory",
   "metadata":{
     "hermes_provenance":{
       "version":1,
@@ -112,35 +112,45 @@ Main先判断当前对话是否够用；确实缺个人背景才读相关 pointe
 }
 ```
 
-上例展示目标Memory的内容与Metadata关系，不定义新的完整Memory创建API；正文、类型标签等创建参数交官方CLI，脚本随后仅补写`hermes_provenance`。Memory ID必须来自本次真实CLI结果，不使用示例占位符。
+上例展示目标Memory的内容与Metadata关系；窄helper只把获批正文、标题、类型标签及`metadata.hermes_provenance`交正式创建API一次发送。Memory ID必须来自本次API返回的`memory.id`，不使用示例占位符，不传自定义ID触发upsert。
 
 时间范围来源在正式提案中通过History定位实际支持消息，再写入本个人Metadata；找不到则不伪造精确来源。这是个人NM证据要求，不强制所有公开目标支持该结构。
 
-### 4.1 官方CLI创建＋小脚本补写Metadata（用户定案，未实施）
+### 4.1 窄helper一次正式API创建并携Metadata（2026-10-18用户修订）
 
-用户已明确Hermes是其NM管理者，正常搜索、读取、编辑和管理直接使用官方`nmem` CLI，不重新实现它的完整命令面。只为官方CLI当前未暴露的任意Metadata写入增加一个窄职责脚本：
+用户明确将本窄helper的创建路线修订为一次正式API创建；其它获准操作仍直接使用官方`nmem` CLI，不重做其命令面。该修订不改变具体内容／目标批准、真实来源和失败未知契约，不授权修改旧Memory或自动重建。用户后续明确：创建规则直接放个人Provider系统提示，不使用Skill；普通Memory字段仍可经批准用CLI修改；仅创建时Metadata错误不能靠补写修复，纠错经用户批准删除后全新创建，partial／unknown不盲重试。
 
-1. Main根据已批准材料撰写Memory正文，并提供准确的`conversation_ref`／`message_uid`来源。脚本不从提案自动猜来源，不代替Main重写正文，也不承诺省去模型提供这些ID。
-2. 脚本调用官方`nmem --json m add`创建Memory，沿用官方参数及创建语义，解析成功结果中的真实Memory主键；不自行以HTTP POST创建Memory，不复刻完整CLI参数／编辑能力。
-3. 取得确定主键后，针对同一Memory补写`metadata.hermes_provenance`，保留无关Metadata。Hermes身份不得填入NM原生Thread／Message来源字段冒充另一种身份。
-4. 官方CLI与Metadata请求复用运行主机同一份NM连接配置及有效覆盖规则（端点、密钥与远程选择），不得各自落到不同服务，不添加第二份脚本连接配置。云端运行时读取云端运行用户的配置，不依赖开发Mac的路径或凭据。
-5. 两步不是原子事务：创建失败／结果未知时不猜主键、不盲重建；创建成功但Metadata补写失败时明确报告已创建ID和未完成步骤，后续仅对该ID修复补写，不再次创建同一记忆，不把半完成报告为全部成功。
+1. Hermes调用方根据已批准材料提供自然语言正文、可选标题、`notebook:<type>`标签及准确的`conversation_ref`／`message_uid`，自行把`hermes_provenance`装入完整Metadata对象。独立工具只验证Metadata是JSON对象，不识别Main身份、不查询History、不读Hermes状态，也不判断来源支持或代替调用方审查纠正。规范来源不能冒充NM原生Thread／Message字段。
+2. 单一源码为`nmem_memory.py`，本机／云端正式入口统一为`python3 ~/scrips/nmem-memory.py create`（严格拼写`scrips`），只依赖标准Python、运行主机官方`nmem` CLI与native curl，不导入Hermes／Provider／插件client，不依赖仓库、HERMES_HOME或执行cwd。正式依据为[Create Memory](https://mem.nowledge.co/docs/api/memories/post)：`POST /memories`接受`content`、`title`、`labels`、`space_id`和通用`metadata`；复用已接受的一次POST、curl stdin私有请求及同ID GET＋CLI回读契约，不先CLI创建、不随后PATCH、不发自定义Memory ID、不回退CLI重建。正文最多32,768字符，标题最多200字符。
+3. 运行主机现有NM配置和有效覆盖规则仍是唯一连接来源：环境／共享配置、一次性`--api-url`、端点与密钥在内存冻结。官方CLI只读解析所选Space名称／别名，返回的真实存储ID用于`space_id`；CLI和HTTP绑定同endpoint/key，不继承其他ambient Space，不增第二配置或Provider。云端使用云端运行用户配置。
+4. 仅从正式响应的`memory.id`解析真实主键，要求`action=created`并核对实际Space；尽早输出只含ID的receipt。再用官方CLI `m show`回读正文／标题／标签／Space，并用既有精确ID GET回读Metadata；与已批准输入和来源均一致才返回`complete / readback_confirmed`。创建响应echo不作为附件已持久化的证明。
+5. POST超时、中断、非法响应、200缺有效ID时返回`creation_unknown`，不猜ID、不盲重试、不回退CLI创建；有真实ID但scope、正文、标签、来源或回读未确认时返回`partial`并保留ID及未完成来源责任。明确更新／upsert而非新建的响应不报创建成功。后续先通过官方CLI核实该ID，不把同一内容再建一次，不以PUT整条覆盖或重写正文弥补附件。
 
-第5项是落实指定两步流程所需的失败处理，不构成新审批、自动治理或通用重试框架。现有`personal_cli.py`的直接HTTP创建／修改正文、强制本地History成员校验、expected-sha更新协议与完整写后回读流程不作为新版写入路线继承；代码取舍在恢复实施后处理，本次不改产品代码。实现时核对官方JSON返回及Metadata更新语义；当前只检查过CLI帮助和已有源码，没有真实创建Memory取证。
+工具参数为`--content-file BODY --title TITLE --label LABEL --space SPACE --metadata-file METADATA`，多标签重复`--label`；默认preview无CLI／网络，具体批准后才加`--apply`。`METADATA`是整个JSON对象，例如上例中的`{"hermes_provenance":{...}}`，也接受非Hermes任意对象；`create --help`给出完整文本／Metadata／来源样例与失败语义，不依赖Skill。安装命令见插件README；只安装单文件到`~/scrips/`，不复制开发机凭据或修改全局shell配置。
+
+旧`personal_cli.py create --provenance-file ...`仅把旧来源对象封装为Metadata并薄转调同一创建实现，安装后的兼容wrapper从`~/scrips/nmem-memory.py`加载。旧`attach`入口只在旧wrapper内为兼容保留，不成为独立工具的新命令；仍只针对明确ID尝试既有Metadata-only行为，不改变其签名／默认／返回语义。现有服务曾忽略其附件，原ID与partial历史保留，不能把新创建路线当作旧目标已修复。无新的明确契约／授权不得再次尝试旧失败目标。
+
+旧CLI→补写两步路线已由本次明确修订替换；旧16日验收例外不代表本轮实际来源链已经通过。当前仅受控／loopback验证，真实模型是否遵循Provider提示及具体payload来源链由主会话另行统一安排。此前A合成场景绕过helper用CLI add，正式GET无hermes_provenance，失败与原Memory永久保留；B场景未执行即因用户撤销Skill方案停止。当前新提示仅源码／受控验证／双测试Profile磁盘同步，不宣称运行进程已加载或真实来源链通过。
 
 ### 4.2 结算与责任终点
 
 Main把获批范围、工具实际执行成功／部分／失败／未知写在正常轨迹中；Noting只据此结算成功分发覆盖，不再次访问NM、不要求它证明Metadata保管质量。个人Main若依据自身适配发现写入问题，应在对话中如实报告；不能把“拒绝／撤回”伪成已分发。已退出Notebook的内容由NM负责以后召回，不另设Notebook旧快照找回通道。
 
-## 5. 已完成Turn的NM Thread归档
+## 5. 已完成Turn的NM Thread同步
 
-沿既有completed且未中断Turn同步hook；只归档合格User/Assistant正文和时间，不含tool payload、模型专用注入。Main取合法跨压缩History Foreground，经host现有egress redaction；Cron取自己的物理执行正文（已按host规则处理），不因此成为用户Conversation。Noting／其他child不独立sync。
+沿既有completed且未中断Turn同步hook；只同步合格User/Assistant正文和时间，不含tool payload、模型专用注入。Main取合法跨压缩History Foreground，经host现有egress redaction；Cron取自己的物理执行正文（已按host规则处理），不因此成为用户Conversation。Noting／其他child不独立sync。
 
-Thread key使用`hermes-personal-<identity>`：合格Main用conversation_ref；独立Cron／普通原生fallback用physical session_id。new/reset/fork分开，合法compaction continuation保持同Thread。Thread locator不能代替Hermes来源地址。
+初始Thread key保持`hermes-personal-<identity>`：合格Main用conversation_ref；独立Cron／普通原生fallback用physical session_id。new/reset/fork的独立Conversation按现有身份分开，合法compaction continuation读取同一Conversation的当前Thread账本。Thread locator不能代替Hermes来源地址；既有命名不承诺复制相同Conversation Ref到同NM Space的不同Profile具有不同远端Thread。
 
-来源稿记录的收据账本：`$HERMES_HOME/nowledge-mem-personal/receipts.sqlite3`，按endpoint、Space、Thread记已明确ACK的prefix fingerprints和同步时间。prefix不变只追加suffix；收到清晰服务端ACK后才推进账本。失败重试是at-least-once尝试，不保证exactly-once，服务端去重须取得真实证据。
+收据仍在`$HERMES_HOME/nowledge-mem-personal/receipts.sqlite3`，按endpoint、Space、初始Thread定位当前分支。保留原`receipts`已ACK的完整合法路径指纹；同库`thread_sync`仅补充当前远端Thread、远端条数、各合法消息的本地身份、实际所在Thread及位置、内容／时间指纹和未确认操作，不保存对话正文或凭据。已有仅ACK账本通过正式CLI只读核对后使用，不清空Profile、不迁移或覆写旧远端。
 
-rewind/edit/path变化造成已ACK前缀不再一致时，停止并返回reconciliation-required；不自动覆盖、删除或追加到别的Thread。需要由个人接入后续设计明确处理方法。本轮不新增一个归档数据库或偷偷启动蒸馏。
+prefix不变时仅追加suffix；正式`threads import --file`新建Thread首批不带checkpoint，后续使用真实远端条数（包含插件首条说明）及稳定idempotency key。原严格服务ACK通过，或先前unknown批次经正式show精确确认后才推进收据；上传前先持久记录本次候选Thread身份和批次指纹。超时、异常、错ACK或负ACK保持收据不动；后续完成边界只读`threads show`核实该Thread完整内容，确证与待定批次一致后才接纳结果，否则保持暂停，不重放未知上传、不换新Thread绕过unknown。会话结束只能处理原已准入完成快照，不能准入未完成尾部。
+
+edit/rewind造成已ACK前缀不一致时，识别当前合法路径与已ACK路径的最长共同前缀，保留旧Thread，另建唯一后继NM Thread。第一条为`role=system`、明确标注Hermes NM插件生成的接续说明，分别列出前一NM Thread ID，以及最后共同消息的NM原生Message ID及其实际所属NM Thread ID；第2条起才是分叉点及其后续消息，共同前缀不重复上传。多次分叉时共同消息可能在祖先Thread，依账本映射精确读取该位置，不把本地位置直接当当前Thread位置。零共同前缀明确写无共同消息／无锚点；只剩共同前缀且没有新suffix时等下一条真实分叉消息，不创建只有说明的空Thread。
+
+配置中的Space名称／别名先由同连接官方`spaces show -- <selector>`解析为真实存储ID，再用于该次Thread读取的全部分页并严格核对返回Space；空串仍清除ambient并使用Default，正式Default身份映射为内部None，不将名称直接当ID、不设全局解析缓存。原生消息ID仅由官方`nmem --json threads show <id> --space-id <space> --offset N --limit K`返回的`messages[].id`取得；核对扁平顶层Thread ID、Space、页位置、role和正文。`message_count`仅本页数量，整Thread总数使用`total_messages`，跨页总数变化或身份／正文不一致拒绝确认。不得用Hermes UID、hash、ordinal或猜值替代原生Message ID；无法确认锚点则准确反馈NM Thread同步暂停，不伪装全部Recall不可用。
+
+成功分叉继续同Thread增量，冷实例／合法压缩续接读取当前分支；不同Provider通过同一Profile账本的SQLite事务串行化。普通同步成功不新增暂停Notice；先前真实暂停可沿原Notice通路报告已确认当前分支。`archive_enabled`作为兼容配置键保留，不引入新的开关、Agent Loop、治理或自动蒸馏。受控开发证据不代表当前运行Profile已安装，也不承诺远端永久exactly-once。
 
 ## 6. NM治理政策与独立Global Rule
 
@@ -174,13 +184,12 @@ Search the layer that fits the question.
 ## Memory maintenance
 
 The built-in MEMORY.md and USER.md stores are retired as active memory sources. Do not write or
-update them with the native memory tool. Use the official nmem CLI through the existing terminal
-for NM reads and writes: `nmem --json m search QUERY`, `nmem --json m show ID`, `nmem threads`,
-`nmem library`; consult `nmem --help` for other operations. This provider registers no nmem_*
-model tools or MCP server.
+update them with the native memory tool. This provider registers no nmem_* model tools or MCP server.
 
-Before creating a Memory, search for duplicates and prefer updating or merging an existing
-Memory. Write confirmed facts with their actual uncertainty and scope; do not store unconfirmed
+For approved Memory creation, use `python3 ~/scrips/nmem-memory.py create` to submit the content and `metadata.hermes_provenance` together; use the official `nmem` CLI for all other operations, including edits to ordinary fields, and correct erroneous creation metadata only by user-approved deletion and recreation.
+
+Before creating a Memory, search for duplicates. Write confirmed facts with their actual uncertainty
+and scope; do not store unconfirmed
 inferences, transient task state, or secrets. Make each Memory understandable outside this
 Conversation and across agent harnesses.
 
@@ -212,8 +221,8 @@ recall across agent harnesses; they are not Memory and not original Conversation
 |---|---|
 | personal_provider/scope/client | 一套Provider；正确runtime矩阵、Bundle排除Working Memory、失败不污染Main |
 | Hermes memory_provider/memory_manager | toolset gate、prefetch admitted input、api_content实际存活、prompt重建边界、完成Turn及egress规则 |
-| 窄职责创建脚本 / nm-cli skill | 官方CLI创建及真实主键解析、仅补写hermes_provenance、同一运行主机NM配置、类型使用原生标签、两步部分失败不重复创建；不复刻CLI或继承旧helper通用写入协议 |
-| Thread receipt | 明确ACK后推进、prefix divergence停止、重复请求真实服务端行为 |
+| 窄职责创建脚本 / Provider提示 | 一次正式API携批准正文／标题／类型标签／Space／hermes_provenance创建，真实ID和Metadata回读；partial／unknown不盲重试；普通字段仍走CLI修改，仅创建时Metadata错误须获批删除后全新创建；不注册／安装nm-cli Skill |
+| Thread receipt | 明确ACK后推进、最长共同前缀分叉续接、原生NM消息锚点、unknown只读确认与不盲写 |
 | Hermes profile ↔ NM space | 每个 profile 的 `$HERMES_HOME/nowledge-mem.json` 的 `space`；host 传 `hermes_home`；未配置用 NM Default；Hermes clone 会复制 `<provider>.json`；手动 CLI 必须显式 `--space` |
 | live profile | Hermes正式运行／部署目标为云端；部署时复用实际运行主机的NM配置。仅按明确部署授权改profile；本次文档冻结不部署、不改NM治理设置、不写入Memory |
 
@@ -231,7 +240,7 @@ recall across agent harnesses; they are not Memory and not original Conversation
 - `nowledge-mem-hermes/docs/PHASE3.md`：本设计文档；当前 §1–§8 是个人 NM 的现行口径。
 - `nowledge-mem-hermes/docs/TEST_REPORT.md`：0.6.0 历史测试报告，不是本次运行证据。
 
-另有 `AGENTS.md`（分区规则）、`CHANGELOG.md`（变更）、`RELEASING.md`（发布）和 `skills/nm-cli/SKILL.md`（CLI skill）；它们不是部署/接入指导。
+另有 `AGENTS.md`（分区规则）、`CHANGELOG.md`（变更）、`RELEASING.md`（发布）；它们不是部署/接入指导。原 `nm-cli` Skill方案已撤销，创建指导由个人Provider系统提示直接提供。
 
 没有单独的“部署与接入指导”文档；本章就是给 Hermes Secretary 主实施人的接入指导。
 

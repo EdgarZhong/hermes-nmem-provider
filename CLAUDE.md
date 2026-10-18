@@ -2,15 +2,33 @@
 
 ## 自主口径收敛 · 待用户追认
 
-暂无。本轮小脚本两步失败时保留已创建ID、仅修复Metadata是落实用户指定流程的必要工程细化，不是用户另行批准的通用重试系统。
+暂无。2026-10-18窄helper一次正式API创建并携Metadata为用户明确修订，不是Agent自主扩大路线。
 
-## 当前产品意图复审整改（2026-10-18，源码尚未重新安装）
+## 用户最新授权：独立工具与NM Thread分叉同步
 
-- 主仓本轮入口：`../hermes-secretary/.autonomous/20261018-product-intent-review/`；独立Astra/high审查NOT PASS，其余实现/调查均6.1/high。此前已安装版本和真实证据保留在下方，不冒称以下源码已载入两个运行Profile。
+- 用户指定NM独立小工具放运行主机 `~/scrips/`，本机／云端一致，不依赖Hermes／插件目录／HERMES_HOME／cwd。metadata owner实施单一独立创建工具，正文与通用Metadata由调用方提供，既有一次POST／真实ID回读／unknown不盲重试约束保持；无真实NM写入前先受控验收。
+- Thread原生Message ID契约研究与自动分叉接续由两个独立owner继续；首条引用旧NM Thread＋最后共同NM原生Message ID，第二条起只同步分叉后缀，不复制共同前缀、不覆盖删除旧Thread。正式可见术语改“NM Thread同步”，兼容配置/API名不强行重命名。
+- 用户已批准PI-26精确英文，root已仅替换此前追加的长句，使用 `python3 ~/scrips/nmem-memory.py create`；其它Provider提示不动。独立工具与Thread包已root亲审并以v4正式安装加载。B真实模型唯一apply创建后，独立同ID CLI／GET确认准确来源Metadata持久存在；B自有资源0。A实际编辑分叉新Thread仅接续头＋新UA三条，共同4条未重传，旧6条不变、pending清空。正式History REST另发现退休旧尾部仍显示，属主仓另案；不以NM底层通过代签UI。root负责主看板和部署SOP，子Agent整包交回、禁止流水账及派生。
+
+## PI-22历史窄包：Provider直接提示，撤销Skill方案（当时磁盘同步／运行未加载）
+
+**用户后续纠正已落实：仅创建Metadata错误需删除后重建，普通字段可经批准通过CLI修改。** 该范围纠正后的实际Provider提示定向1项通过（0.2秒）、Ruff及diff检查通过；两测试Profile磁盘已同步，无重启／NM写入／新模型调用。
+
+
+
+- 用户明确撤销nm-cli Skill方案；创建规则直接进入个人Provider `_MAINTENANCE`：获批Memory仅现有personal_cli.py create一次携正文／标题／类型标签／Space／metadata.hermes_provenance；其它操作官方CLI；普通Memory字段仍可经批准用CLI修改；仅创建时Metadata错误须获批删除后全新创建，partial／unknown不盲重试。既有attach仅兼容保留，不引导模型使用。
+- 本包只改个人Provider提示、插件入口、安装器本次技能接线与必要文档／相关定向测试，不改公共核心／框架Prompt／helper协议或服务；双测试Profile仅安全文件同步，旧活runtime/root/cache不刷新。canonical runner仅选4项相关既有测试通过（1.4秒），相关5个Python文件Ruff及diff检查通过；helper旧套件复用、未重跑。两测试Profile仅同步personal_provider.py＋__init__.py并移除原nm-cli SKILL.md，原件ignored备份；本次Metadata范围纠正后Provider SHA为f14d2cfeae24a974bb1ccb1a6333afa192c1fb3147859ebf8648bd331197b081，helper仍75d8dca1…cf3e。PID32366/77413未重启，没有活runtime/root/cache刷新；尚未验证加载或真实模型行为。
+- 刚添加的两测试Profile skills.auto_load已通过正式config unset撤销，原先absent恢复absent；仅清除本插件自有external_dirs项，保留其它现有配置，未整份恢复旧config。.env／SOUL指纹未变；B新Conversation／模型／NM调用均0，准备包停止。原始备份与失败留主仓ignored metadata-live-evidence。
+- A唯一合成Memory（ID前缀0c75…）字段创建正确但未读Skill／未用helper，正式同ID GET无hermes_provenance；NOT PASS永久保留，不修改／删除／重建。三个manual Noting已结算、自有资源0；不据此宣称helper真实API来源旅程或refs型通过。
+
+## 先前v3产品意图复审整改（2026-10-18，历史加载与实测证据）
+
+- 主仓本轮入口：`../hermes-secretary/.autonomous/20261018-product-intent-review/`；独立Astra/high总门禁仍未PASS，其余实现/调查均6.1/high。此前v3 Provider、helper与76行Skill已由官方安装器同步两个测试Profile，并由主仓dashboard进程PID32366加载；该时点配置/SOUL/政策保持，之后Skill撤销及新提示磁盘状态以上节为准。下方此前版本与真实证据按历史保留，不作为当前安装指纹。
 - root已review接收helper `--space`命令层级与安装器原生`skills.external_dirs`修补：新6项＋既有相关6项通过；隔离新home实际根索引/skill_view与clone所属路径正确。Skill只纠正一行CLI语法，未改行为政策。
 - root已review接收既有request_json的单一默认curl传输：12不同节点分批通过、Ruff/复杂度/diff通过，未改endpoint/key/UA/CF；需要本机native curl，缺失明确失败，不自动回退。原urllib403/1010保留为失败。
-- **E02/VP-02仍阻塞：**唯一获准旧合成Memory做2GET/1Metadata-only PATCH/0创建，正文、标题、标签与13个无关Metadata字段保持；服务忽略hermes_provenance，回读缺失，helper准确partial。随后唯一/openapi.json GET403；官方文档/本机前端未提供可据以修复的任意Metadata更新契约。停止猜路由和反复写，未获新范围不另试PATCH，不改为HTTP创建或塞正文。
-- 报告在主仓ignored `product-intent-review-20261018/`：repair-nm-wiring.md、repair-metadata-transport.md、metadata-contract-research.md。原始来源/响应/凭据不进Git；技能实际模型使用、提案查源/标签、精确来源持久化尚不能宣布通过。本阶段源码提交不代表已安装、重启或整轮通过；后续按主仓统一集成。
+- **旧附件失败历史保留：**唯一获准旧合成Memory做2GET/1Metadata-only PATCH/0创建，正文、标题、标签与13个无关Metadata字段保持；服务忽略hermes_provenance，回读缺失，helper准确partial。随后唯一/openapi.json GET403；官方文档/本机前端未提供可据以修复的任意Metadata更新契约。停止猜路由和反复写，未获新范围不另试PATCH，不把来源塞正文；后续用户仅批准新Memory创建改为一次正式API携Metadata，见下条。
+- **E02源码已review／安装，真实验收仍进行中：** `personal_cli.create`复用现有curl `request_json`一次POST `/memories`并携`metadata.hermes_provenance`，官方CLI解析Space后核对真实存储ID；unknown不重试，partial保留真实ID和来源责任，旧`attach`兼容语义保持。受控loopback与Skill最小同步差异已由root接收并正式安装；当前attempt-02已转root后备thin UI。按root最新现场回报，模型经native CLI创建了新合成Memory（ID前缀`0c75…`），后续正式GET已确认Metadata缺hermes_provenance，A失败保留；helper API真实模型路径未成立，不能据创建响应判E02/VP-02通过。主仓ignored `metadata-create-api.md`、`archive-pause-feedback.md §8`及`metadata-live-evidence/thin-ui-handoff.json`记录源码／安装／后备交接；thin交接是切换时点记录，后续结果待root亲审。
+- 报告在主仓ignored `product-intent-review-20261018/`：repair-nm-wiring.md、repair-metadata-transport.md、metadata-contract-research.md。原始来源/响应/凭据不进Git；技能实际模型使用、提案查源/标签、精确来源持久化尚不能宣布通过。代码提交、安装与PID加载均不代替真实Metadata回读或整轮通过；后续按主仓统一集成与root亲审。
 
 ## 本阶段收口 · 个人接入已安装并取得定向真实证据（2026-10-18）
 
@@ -84,7 +102,7 @@
 - 当前仅完成源码承接和文档对齐。启动代码基线为`f9733fcb31a0e6f468eabe6419cb76444fe16b30`，本地目录`/Users/edgar/code/hermes-nmem-provider`。产品代码未改、未安装、未部署、未访问或写入NM服务。
 - 用户要求文档基线后暂停：不进入writing-plans、代码实施或运行验收。根README、AGENTS、本文及插件规格和入口一同纳入文档基线。
 - 唯一轮次索引：`../hermes-secretary/.autonomous/20261016-round3-secretary-nm/snapshot-index.md`；双仓库精确基线见同目录baseline.txt；用户明确本次不撰写交付或交接文档。
-- 已确认：必须保存metadata.hermes_provenance；仅用小脚本调用官方CLI创建、取返回ID、补Metadata，复用运行主机配置。Main提供正文与来源；不复刻官方CLI，不保留旧helper的完整直接API写入体系。
+- 当时确认：必须保存metadata.hermes_provenance；旧路线为官方CLI创建、取返回ID后补Metadata。2026-10-18用户仅将创建改为窄helper一次正式API携Metadata（PHASE3§4.1）；其他CLI／来源／同配置／未知失败原则继续保留。
 - 验收例外：用户明确省去小脚本严格验证，不安排其真实NM测试写入；只做实施基本检查，联通问题留待以后云端部署。这不是其他Provider或公开核心免验。
 - 环境：本轮本地隔离验收，以后部署云端。自动Thread归档的真实NM写入尚未授权；需要时另行收敛，不能擅写已有个人记录或改治理配置。
 - 调查事实：本机nmem 0.10.101的add/update help无任意metadata入口；add/update支持labels，source-msg不是任意Hermes元数据入口。已有client能复用环境变量／config，但与官方CLI有效覆盖规则是否完全一致仍须实施时核对；未读取或打印真实凭据。

@@ -4,29 +4,23 @@ from __future__ import annotations
 import copy
 import hashlib
 from contextlib import closing
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 import json
 import logging
 import os
 import sqlite3
 import threading
-import time
 from pathlib import Path
 from typing import Any
 
 from .client import _resolve_nmem
 from .provider import NowledgeMemProvider
 from .personal_client import PersonalMemClient
+from .personal_thread_sync import ThreadSyncUnconfirmed, sync_thread
 from .personal_scope import (HistoryReconciliationRequired, Scope, clean_transcript,
-                             completed_history_rows, resolve_scope)
+                             completed_history_rows, history_rows, resolve_scope)
 
 log = logging.getLogger(__name__)
-
-
-class _ArchiveAckError(RuntimeError):
-    def __init__(self, category):
-        self.category = category
-        super().__init__("NM did not explicitly acknowledge Thread write")
 
 
 VERSION = "0.6.0"
@@ -56,13 +50,12 @@ Search the layer that fits the question.
 _MAINTENANCE = """## Memory maintenance
 
 The built-in MEMORY.md and USER.md stores are retired as active memory sources. Do not write or
-update them with the native memory tool. Use the official nmem CLI through the existing terminal
-for NM reads and writes: `nmem --json m search QUERY`, `nmem --json m show ID`, `nmem threads`,
-`nmem library`; consult `nmem --help` for other operations. This provider registers no nmem_*
-model tools or MCP server.
+update them with the native memory tool. This provider registers no nmem_* model tools or MCP server.
 
-Before creating a Memory, search for duplicates and prefer updating or merging an existing
-Memory. Write confirmed facts with their actual uncertainty and scope; do not store unconfirmed
+For approved Memory creation, use `python3 ~/scrips/nmem-memory.py create` to submit the content and `metadata.hermes_provenance` together; use the official `nmem` CLI for all other operations, including edits to ordinary fields, and correct erroneous creation metadata only by user-approved deletion and recreation.
+
+Before creating a Memory, search for duplicates. Write confirmed facts with their actual uncertainty
+and scope; do not store unconfirmed
 inferences, transient task state, or secrets. Make each Memory understandable outside this
 Conversation and across agent harnesses.
 """
@@ -235,6 +228,7 @@ class PersonalNowledgeMemProvider(NowledgeMemProvider):
         self._client_space = ""
         self._space_label = "Default"
         self._profile_name = ""
+        self._archive_observations = {}
 
     def is_available(self):
         # Contract: availability checks dependencies, never performs a network probe.
@@ -286,6 +280,7 @@ class PersonalNowledgeMemProvider(NowledgeMemProvider):
             self._disabled = True
             self._archive_enabled = False
             self._accepted_archive = None
+            self._archive_observations = {}
             self._context_epoch += 1
             self._client = self._recall_client = None
             self._resolved_space = None
@@ -381,7 +376,11 @@ class PersonalNowledgeMemProvider(NowledgeMemProvider):
         with self._policy_lock:
             if not self._context_still_current(epoch, scope):
                 return ""
-            return text
+            self._check_cold_archive_observation(scope)
+            observation = (self._archive_observations.get(self._observation_key(scope))
+                           if self._archive_observations else None)
+            return text + ("\n\nNM Thread sync observation:\n" + observation["text"]
+                           if observation else "")
 
     def get_tool_schemas(self):
         return []
@@ -418,10 +417,11 @@ class PersonalNowledgeMemProvider(NowledgeMemProvider):
     def _archive_acknowledged(result, thread_id):
         """Require affirmative service acknowledgement, never truthy/empty JSON."""
         if (not isinstance(result, dict) or result.get("success") is not True
-                or result.get("error") or result.get("thread_id", thread_id) != thread_id):
+                or result.get("error") or result.get("failed_count", 0) != 0
+                or result.get("thread_id", thread_id) != thread_id):
             return False
         results = result.get("results")
-        return results is None or (isinstance(results, list) and all(
+        return results is None or (isinstance(results, list) and bool(results) and all(
             isinstance(item, dict) and item.get("success") is True and not item.get("error")
             and item.get("thread_id", thread_id) == thread_id
             for item in results))
@@ -439,9 +439,18 @@ class PersonalNowledgeMemProvider(NowledgeMemProvider):
             return "thread_id_mismatch"
         return "negative_or_ambiguous_ack"
 
+    def _history_sync_data(self, rows):
+        selected = clean_transcript(rows, lambda items: items)
+        selected = [row for row in selected if self._extract_message_text(row.get("content"))]
+        identities = [row.get("message_uid") for row in selected]
+        if not all(isinstance(identity, str) and identity for identity in identities):
+            raise ValueError("Canonical History message identity is unavailable")
+        return self._clean_session_messages(selected), identities
+
     def _archive(self, scope: Scope, messages):
         if not scope.sync_allowed:
             return
+        message_uids = None
         if scope.conversation_ref:
             # Bound the canonical path to the exact completed snapshot; the worker
             # may run after the next user input has already reached the database.
@@ -449,57 +458,128 @@ class PersonalNowledgeMemProvider(NowledgeMemProvider):
             from agent.memory_manager import _redact_for_provider
             # Scrub the ENTIRE batch before dropping tools: secrets detected in a
             # tool row must also be masked when repeated bare in assistant prose.
-            cleaned = clean_transcript(_redact_for_provider(rows), self._clean_session_messages)
+            cleaned, message_uids = self._history_sync_data(_redact_for_provider(rows))
         else:
             # Ordinary Hermes/Cron: manager already batch-scrubbed its snapshot.
             cleaned = clean_transcript(messages, self._clean_session_messages)
-        return self._archive_cleaned(scope, cleaned)
+        return self._archive_cleaned(scope, cleaned, message_uids=message_uids)
 
-    def _archive_cleaned(self, scope: Scope, cleaned):
+    def _receipt_key(self, scope):
+        return json.dumps([self._client._api_url(), self._resolved_space, scope.thread_id])
+
+    def _observation_key(self, scope):
+        return hashlib.sha256(json.dumps([str(Path(self._home).resolve()), self._receipt_key(scope)]).encode()).hexdigest()
+
+    @staticmethod
+    def _archive_fingerprints(cleaned):
+        return [hashlib.sha256(json.dumps(row, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
+                for row in cleaned]
+
+    def _observe_archive(self, scope, status):
+        """Only reconciliation or a formal compatible/ACK boundary changes this observation."""
+        if not scope.context_allowed:
+            return None
+        key = self._observation_key(scope)
+        previous = self._archive_observations.get(key)
+        if status in {"reconciliation-required", "unacknowledged"}:
+            state = "paused"
+            detail = ("本 Conversation 的 NM Thread同步因合法History边界或NM消息锚点／上传结果尚未确认而暂停。"
+                      "本地合法 History 仍可用；NM 旧副本未被撤回；这不表示全部 NM Memory 检索失效。")
+        elif previous and status in {"unchanged", "acknowledged"}:
+            state = "compatible"
+            detail = ("本 Conversation 的 NM Thread同步在该时点的正式检查中已确认当前分支。"
+                      "这不表示已重新核验 NM 远端旧副本。")
+        else:
+            return previous
+        if previous and previous["state"] == state:
+            return previous
+        stamp = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        observation = {"state": state, "text": f"截至 {stamp}，当前 Profile 中，{detail}",
+                       "revision": previous["revision"] + 1 if previous else 1}
+        self._archive_observations[key] = observation
+        return observation
+
+    def _check_cold_archive_observation(self, scope):
+        """Read the existing ACK prefix and legal History; never clear/rewrite/repair on a read."""
+        if not self._archive_enabled or not scope.context_allowed or not scope.conversation_ref:
+            return
+        path = Path(self._home) / "nowledge-mem-personal" / "receipts.sqlite3"
+        if not path.is_file():
+            return
+        try:
+            if self._observation_key(scope) in self._archive_observations:
+                return
+            with closing(sqlite3.connect(path.resolve().as_uri() + "?mode=ro", uri=True)) as db:
+                key = self._receipt_key(scope)
+                stored = db.execute("SELECT fingerprints FROM receipts WHERE scope=?", (key,)).fetchone()
+                table = db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='thread_sync'").fetchone()
+                pending = (db.execute("SELECT state,pending FROM thread_sync WHERE scope=?", (key,)).fetchone()
+                           if table else None)
+            if pending and pending[1]:
+                self._observe_archive(scope, "unacknowledged")
+                return
+            if stored is None:
+                return
+            from agent.memory_manager import _redact_for_provider
+            cleaned, identities = self._history_sync_data(
+                _redact_for_provider(history_rows(self._home, scope.conversation_ref)))
+            previous = json.loads(stored[0])
+            previous_ids = json.loads(pending[0]).get("message_uids") if pending else None
+            mismatch = (isinstance(previous, list)
+                        and self._archive_fingerprints(cleaned)[:len(previous)] != previous)
+            if mismatch or (previous_ids is not None and identities[:len(previous_ids)] != previous_ids):
+                self._observe_archive(scope, "reconciliation-required")
+        except Exception:
+            log.debug("Personal NM Thread sync cold observation unavailable", exc_info=True)
+
+    def _archive_result_feedback(self, scope, result):
+        """Presentation failure cannot change the archive result or completed turn."""
+        try:
+            return self._build_archive_result_feedback(scope, result)
+        except Exception:
+            log.debug("Personal NM Thread sync feedback unavailable", exc_info=True)
+            return result
+
+    def _build_archive_result_feedback(self, scope, result):
+        if not isinstance(result, dict):
+            return result
+        observation = self._observe_archive(scope, result.get("status"))
+        if observation is not None and result.get("status") != "skipped":
+            from agent.memory_provider import MemorySyncFeedback
+            result = {**result, "feedback": MemorySyncFeedback(scope=self._observation_key(scope),
+                state=f"{observation['state']}:{observation['revision']}", text=observation["text"],
+                level="warn" if observation["state"] == "paused" else "info")}
+        return result
+
+    def _archive_cleaned(self, scope: Scope, cleaned, *, message_uids=None):
         if self._disabled or not self._archive_enabled:
             return {"status": "skipped"}
-        fingerprints = [hashlib.sha256(json.dumps(row, sort_keys=True, ensure_ascii=False).encode()).hexdigest() for row in cleaned]
         state_dir = Path(self._home) / "nowledge-mem-personal"
         state_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
         state_path = state_dir / "receipts.sqlite3"
-        key = json.dumps([self._client._api_url(), self._resolved_space, scope.thread_id])
-        # _resolved_space is raw resolution: None keeps legacy Default receipts stable.
-        # _client_space is the effective lane and is what the clients actually use.
-        # This is only an ACK ledger, using the existing database. The transaction
-        # serializes separate Provider instances through upload and receipt commit.
         with closing(sqlite3.connect(state_path, timeout=5)) as db, db:
             os.chmod(state_path, 0o600)
-            db.execute("CREATE TABLE IF NOT EXISTS receipts (scope TEXT PRIMARY KEY, fingerprints TEXT NOT NULL, synced_at REAL NOT NULL)")
-            db.execute("BEGIN IMMEDIATE")
-            stored = db.execute("SELECT fingerprints FROM receipts WHERE scope=?", (key,)).fetchone()
-            previous = json.loads(stored[0]) if stored else []
-            if not isinstance(previous, list) or fingerprints[:len(previous)] != previous:
-                raise HistoryReconciliationRequired("Archived history was rewritten; reconciliation-required")
-            delta = cleaned[len(previous):]
-            if not delta:
-                return {"status": "unchanged", "thread_id": scope.thread_id}
-            checkpoint = {}
-            if stored is not None:
-                checkpoint = {"expected_message_count": len(previous),
-                              "idempotency_key": hashlib.sha256(json.dumps([key, fingerprints]).encode()).hexdigest()}
-            result = self._client.import_thread(scope.thread_id, delta,
-                title=scope.title or self._build_thread_title(cleaned), source="hermes", **checkpoint)
-            if not self._archive_acknowledged(result, scope.thread_id):
-                raise _ArchiveAckError(self._archive_failure_category(result, scope.thread_id))
-            db.execute("INSERT INTO receipts VALUES (?,?,?) ON CONFLICT(scope) DO UPDATE SET fingerprints=excluded.fingerprints,synced_at=excluded.synced_at",
-                       (key, json.dumps(fingerprints), time.time()))
-        return {"status": "acknowledged", "thread_id": scope.thread_id, "appended": len(delta)}
+            return sync_thread(db, key=self._receipt_key(scope), thread_id=scope.thread_id,
+                cleaned=cleaned, client=self._client, cleaner=self._clean_session_messages,
+                message_uids=message_uids,
+                title=scope.title or self._build_thread_title(cleaned),
+                acknowledged=self._archive_acknowledged, failure_category=self._archive_failure_category)
 
     def _attempt_archive(self, scope, messages):
         try:
-            return self._archive(scope, messages)
+            result = self._archive(scope, messages)
         except HistoryReconciliationRequired:
-            log.warning("Personal NM Thread reconciliation-required; acknowledged prefix differs; no write attempted")
-            return {"status": "reconciliation-required", "thread_id": scope.thread_id}
+            log.warning("Personal NM Thread reconciliation-required; legal history incompatible; no write attempted")
+            result = {"status": "reconciliation-required", "thread_id": scope.thread_id}
+        except ThreadSyncUnconfirmed as exc:
+            log.warning("Personal NM Thread sync paused (%s); no uncertain write replayed", exc.category)
+            result = {"status": "unacknowledged", "thread_id": scope.thread_id,
+                      "category": exc.category}
         except Exception as exc:
-            log.warning("Personal NM Thread sync not acknowledged (%s); retry on next completed boundary",
+            log.warning("Personal NM Thread sync not acknowledged (%s); next completed boundary will confirm before writing",
                         getattr(exc, "category", type(exc).__name__))
-            return {"status": "unacknowledged", "thread_id": scope.thread_id}
+            result = {"status": "unacknowledged", "thread_id": scope.thread_id}
+        return self._archive_result_feedback(scope, result)
 
     def sync_turn(self, user_content, assistant_content, *, session_id="", messages=None,
                   completed=True, interrupted=False, failed=False, **kwargs):
@@ -530,10 +610,10 @@ class PersonalNowledgeMemProvider(NowledgeMemProvider):
 
     def get_config_schema(self):
         return [
-            {"key": "archive_enabled", "description": "Automatically archive completed turns to NM Threads", "type": "boolean", "default": True},
+            {"key": "archive_enabled", "description": "Automatically sync completed turns to NM Threads", "type": "boolean", "default": True},
             {"key": "space", "description": "NM Space name/id (blank uses NM default)", "default": ""},
             {"key": "agent_identity", "description": "Optional NM agent identity", "default": ""},
-            {"key": "timeout", "description": "Bundle/archive timeout seconds", "type": "number", "default": 8, "minimum": 1, "maximum": 60},
+            {"key": "timeout", "description": "Bundle/Thread sync timeout seconds", "type": "number", "default": 8, "minimum": 1, "maximum": 60},
             {"key": "recall_timeout", "description": "Fast recall timeout seconds", "type": "number", "default": 2, "minimum": 0.1, "maximum": 5},
             {"key": "recall_limit", "description": "Maximum automatic recall pointers", "type": "integer", "default": 5, "minimum": 1, "maximum": 10},
             {"key": "recall_max_chars", "description": "Pointer index character budget including Memory check", "type": "integer", "default": 2400, "minimum": 700, "maximum": 8000},
@@ -546,6 +626,7 @@ class PersonalNowledgeMemProvider(NowledgeMemProvider):
             self._archive_enabled = False
             self._client = self._recall_client = None
             self._accepted_archive = None
+            self._archive_observations = {}
             self._resolved_space = None
             self._client_space = ""
             self._space_label = "Default"

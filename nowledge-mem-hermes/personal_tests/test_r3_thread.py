@@ -313,7 +313,7 @@ class ArchiveIntegrationTests(unittest.TestCase):
         self.assertEqual(self.writes(), [])
         self.assertEqual(self.receipts(), [])
 
-    def test_session_end_retries_only_accepted_completed_snapshot(self):
+    def test_session_end_checks_unknown_accepted_snapshot_without_blind_replay(self):
         p = self.provider()
         rows = self.add_turn()
         Handler.replies = ['disconnect']
@@ -321,19 +321,23 @@ class ArchiveIntegrationTests(unittest.TestCase):
         self.assertEqual(self.receipts(), [])
         self.db.append_message('s1', 'user', 'interrupted tail', message_uid='tail')
         p.on_session_end(rows + [{'role': 'user', 'content': 'interrupted tail'}])
-        self.assertEqual(len(self.writes()), 2)
-        self.assertEqual(len(self.writes()[-1][2]['messages']), 2)
-        self.assertEqual(len(self.receipts()), 1)
+        self.assertEqual(len(self.writes()), 1)
+        self.assertEqual(self.receipts(), [])
 
     def test_only_explicit_matching_ack_advances_receipts(self):
-        p = self.provider()
-        rows = self.add_turn()
-        for reply in ({}, {'error': 'failed'}, {'success': False}, [], 'ok',
-                      {'success': True, 'thread_id': 'another'},
-                      {'success': True, 'results': [{'success': False}]}):
+        replies = ({}, {'error': 'failed'}, {'success': False}, [], 'ok',
+                   {'success': True, 'thread_id': 'another'},
+                   {'success': True, 'results': [{'success': False}]},
+                   {'success': True, 'results': []}, {'success': True, 'failed_count': 1})
+        for index, reply in enumerate(replies):
+            sid = f'ack-{index}'
+            p = self.provider(sid=sid)
+            rows = self.add_turn(sid=sid)
             Handler.replies = [reply]
             self.assertEqual(p.sync_turn('u', 'a', messages=rows)['status'], 'unacknowledged')
             self.assertEqual(self.receipts(), [])
+        p = self.provider(sid='success')
+        rows = self.add_turn(sid='success')
         Handler.replies = [{'success': True, 'thread_id': p._scope().thread_id}]
         self.assertEqual(p.sync_turn('u', 'a', messages=rows)['status'], 'acknowledged')
         self.assertEqual(len(self.receipts()), 1)
@@ -341,7 +345,7 @@ class ArchiveIntegrationTests(unittest.TestCase):
         p.sync_turn('u', 'a', messages=rows)
         self.assertEqual(len(self.writes()), count)
 
-    def test_timeout_does_not_acknowledge_and_retry_remains_at_least_once(self):
+    def test_timeout_does_not_acknowledge_or_blindly_retry_unknown_write(self):
         p = self.provider()
         first = self.add_turn()
         self.assertEqual(p.sync_turn('u', 'a', messages=first)['status'], 'acknowledged')
@@ -352,29 +356,352 @@ class ArchiveIntegrationTests(unittest.TestCase):
         self.assertEqual(p.sync_turn('u', 'a', messages=rows)['status'], 'unacknowledged')
         self.assertEqual(self.receipts(), previous)
         p._client._timeout = 2
-        self.assertEqual(p.sync_turn('u', 'a', messages=rows)['status'], 'acknowledged')
-        self.assertEqual(len(self.writes()), 3)
-        self.assertEqual(self.writes()[1][2]['messages'], self.writes()[2][2]['messages'])
-        self.assertEqual(self.writes()[1][2]['idempotency_key'], self.writes()[2][2]['idempotency_key'])
-        self.assertEqual(self.writes()[1][2]['expected_message_count'], 2)
+        self.assertEqual(p.sync_turn('u', 'a', messages=rows)['status'], 'unacknowledged')
+        self.assertEqual(len(self.writes()), 2)
+        self.assertEqual(self.receipts(), previous)
 
-    def test_edit_rewind_or_empty_path_requires_reconciliation(self):
+    def test_unconfirmed_anchor_and_retired_boundary_do_not_write(self):
         p = self.provider()
         rows = self.add_turn()
         p.sync_turn('u', 'a', messages=rows)
         before = self.receipts()
-        self.db._execute_write(lambda conn: conn.execute("UPDATE messages SET content='edited' WHERE message_uid='s1-1-user'"))
-        self.assertEqual(p.sync_turn('u', 'a', messages=rows)['status'], 'reconciliation-required')
+        self.db._execute_write(lambda conn: conn.execute("UPDATE messages SET content='edited' WHERE message_uid='s1-1-assistant'"))
+        result = p.sync_turn('u', 'a', messages=rows)
+        self.assertEqual(result['status'], 'unacknowledged')
+        self.assertEqual(result['category'], 'native_message_anchor_unconfirmed')
         self.db._execute_write(lambda conn: conn.execute('UPDATE messages SET active=0,compacted=0'))
         self.assertEqual(p.sync_turn('u', 'a', messages=rows)['status'], 'reconciliation-required')
         self.assertEqual(self.receipts(), before)
         self.assertEqual(len(self.writes()), 1)
 
+    def feedback_agent(self, provider, *, sid='s1', notices=None):
+        from run_agent import AIAgent
+        manager = MemoryManager()
+        manager.add_provider(provider)
+        self.addCleanup(manager.shutdown_all)
+        agent = AIAgent.__new__(AIAgent)
+        agent.session_id = sid
+        agent._memory_manager = manager
+        agent.notice_callback = (notices if notices is not None else []).append
+        agent.status_callback = None
+        return agent
+
+    def completed_feedback(self, agent, rows):
+        from agent.context_compaction_request import enter_native_turn, leave_native_turn
+        token, _ = enter_native_turn(agent, None, rows)
+        try:
+            agent._sync_external_memory_for_turn(original_user_message='current question',
+                final_response='completed answer', interrupted=False, messages=rows)
+            self.assertTrue(agent._memory_manager.flush_pending(timeout=5))
+        finally:
+            leave_native_turn(agent, token)
+
+    def test_q03_formal_sync_edit_refusal_notice_dedup_and_current_input_fact(self):
+        p = self.provider()
+        rows, notices = self.add_turn(), []
+        agent = self.feedback_agent(p, notices=notices)
+        self.completed_feedback(agent, rows)
+        before = self.receipts()
+        self.assertEqual(notices, [])
+        self.db._execute_write(lambda conn: conn.execute(
+            "UPDATE messages SET content='edited legal question' WHERE message_uid='s1-1-assistant'"))
+        for _ in range(3):
+            self.completed_feedback(agent, rows)
+        self.assertEqual(len(notices), 1)
+        self.assertEqual((notices[0].level, notices[0].ttl_ms), ('warn', 5000))
+        for fact in ('当前 Profile', '本 Conversation', '暂停', '本地合法 History 仍可用', '旧副本未被撤回'):
+            self.assertIn(fact, notices[0].text)
+        self.assertEqual(self.receipts(), before)
+        self.assertEqual(len(self.writes()), 1)
+        self.assertEqual(P.history_rows(str(self.home), p._scope().conversation_ref)[1]['content'],
+                         'edited legal question')
+        with patch.object(p._recall_client, 'search', return_value={'memories': []}):
+            facts = p.prefetch('what happened?')
+        self.assertIn(notices[0].text, facts)
+        for private in (str(self.home), self.url, p._scope().thread_id, p._scope().conversation_ref):
+            self.assertNotIn(private, notices[0].text)
+        self.assertNotIn('请', notices[0].text)
+        # Reading cannot repair or clear a refused archive.
+        self.assertIn('暂停', p.sync_turn('q', 'a', messages=rows)['feedback'].text)
+
+    def test_q03_late_result_does_not_use_next_callback_and_retries_same_scope(self):
+        from agent.context_compaction_request import enter_native_turn, leave_native_turn
+        p = self.provider()
+        rows, old, new = self.add_turn(), [], []
+        agent = self.feedback_agent(p, notices=old)
+        self.completed_feedback(agent, rows)
+        self.db._execute_write(lambda conn: conn.execute(
+            "UPDATE messages SET content='edited' WHERE message_uid='s1-1-assistant'"))
+        entered, release = threading.Event(), threading.Event()
+
+        def barrier():
+            entered.set()
+            self.assertTrue(release.wait(5))
+
+        manager = agent._memory_manager
+        manager._submit_background(barrier)
+        self.assertTrue(entered.wait(5))
+        token, _ = enter_native_turn(agent, None, rows)
+        agent._sync_external_memory_for_turn(original_user_message='question', final_response='answer',
+                                            interrupted=False, messages=rows)
+        leave_native_turn(agent, token)
+        agent.notice_callback = new.append
+        next_token, _ = enter_native_turn(agent, None, rows)
+        release.set()
+        try:
+            self.assertTrue(manager.flush_pending(timeout=5))
+            self.assertEqual((old, new), ([], []))
+            self.assertEqual(manager._sync_feedback_attempted, {})
+            agent._sync_external_memory_for_turn(original_user_message='next question', final_response='answer',
+                                                interrupted=False, messages=rows)
+            self.assertEqual(len(new), 1)  # replay at this completed boundary, before another worker result
+            self.assertTrue(manager.flush_pending(timeout=5))
+            self.assertEqual(len(new), 1)
+        finally:
+            release.set()
+            leave_native_turn(agent, next_token)
+
+    def test_q03_cold_prefetch_rechecks_existing_receipt_without_remote_write(self):
+        p = self.provider()
+        rows = self.add_turn()
+        p.sync_turn('q', 'a', messages=rows)
+        before = self.receipts()
+        self.db._execute_write(lambda conn: conn.execute(
+            "UPDATE messages SET active=0,compacted=0 WHERE message_uid='s1-1-assistant'"))
+        cold = self.provider()
+        self.assertEqual(cold._archive_observations, {})
+        with patch.object(cold._recall_client, 'search', return_value={'memories': []}):
+            text = cold.prefetch('meaningful question')
+        self.assertIn('NM Thread sync observation:', text)
+        self.assertIn('暂停', text)
+        self.assertEqual(self.receipts(), before)
+        self.assertEqual(len(self.writes()), 1)
+        # Disabled profile gains no archive fact or observation, even with old receipts.
+        disabled = self.provider(archive_enabled=False)
+        with patch.object(disabled._recall_client, 'search', return_value={'memories': []}):
+            self.assertNotIn('sync observation', disabled.prefetch('meaningful question'))
+        self.assertEqual(disabled._archive_observations, {})
+
+    def test_q03_unacknowledged_skipped_recall_cannot_clear_only_formal_compatibility_can(self):
+        p = self.provider()
+        rows, notices = self.add_turn(), []
+        agent = self.feedback_agent(p, notices=notices)
+        self.completed_feedback(agent, rows)
+        self.db._execute_write(lambda conn: conn.execute(
+            "UPDATE messages SET content='edited' WHERE message_uid='s1-1-assistant'"))
+        self.completed_feedback(agent, rows)
+        paused = p.sync_turn('q', 'a', messages=rows)['feedback']
+        with patch.object(p, '_archive', side_effect=OSError('offline')):
+            self.assertEqual(p.sync_turn('q', 'a', messages=rows)['feedback'], paused)
+        p._archive_enabled = False
+        self.assertEqual(p.sync_turn('q', 'a', messages=rows), {'status': 'skipped'})
+        p._archive_enabled = True
+        with patch.object(p._recall_client, 'search', return_value={'memories': []}):
+            self.assertIn('暂停', p.prefetch('meaningful input'))
+        self.db._execute_write(lambda conn: conn.execute(
+            "UPDATE messages SET content='answer' WHERE message_uid='s1-1-assistant'"))
+        self.completed_feedback(agent, rows)
+        self.assertEqual(len(notices), 2)
+        self.assertIn('该时点的正式检查', notices[-1].text)
+        self.assertIn('不表示已重新核验', notices[-1].text)
+        self.assertEqual(len(self.writes()), 1)  # unchanged verifies prefix, not a new remote ACK
+        self.db._execute_write(lambda conn: conn.execute(
+            "UPDATE messages SET content='edited again' WHERE message_uid='s1-1-assistant'"))
+        self.completed_feedback(agent, rows)
+        self.assertEqual(len(notices), 3)
+        self.db._execute_write(lambda conn: conn.execute(
+            "UPDATE messages SET content='answer' WHERE message_uid='s1-1-assistant'"))
+        self.completed_feedback(agent, rows + self.add_turn(number=2))
+        self.assertEqual(len(notices), 4)
+        self.assertEqual(len(self.writes()), 2)  # affirmative ACK + committed suffix receipt
+
+    def test_q03_official_rewind_retired_boundary_pauses_then_real_branch_recovers(self):
+        p = self.provider()
+        rows, notices = self.add_turn(), []
+        agent = self.feedback_agent(p, notices=notices)
+        self.completed_feedback(agent, rows)
+        before = self.receipts()
+        self.db.rewind_user_turn('s1', 0)
+        self.assertEqual(P.history_rows(str(self.home), p._scope().conversation_ref), [])
+        self.completed_feedback(agent, rows)
+        self.assertEqual(self.receipts(), before)
+        self.completed_feedback(agent, self.add_turn(number=2, user='replacement question'))
+        self.assertEqual(len(notices), 2)
+        self.assertEqual([notice.level for notice in notices], ['warn', 'info'])
+        self.assertIn('当前分支', notices[-1].text)
+        self.assertEqual(len(self.writes()), 2)
+        self.assertNotEqual(self.writes()[0][2]['thread_id'], self.writes()[1][2]['thread_id'])
+
+    def test_q03_repause_is_a_new_transition_even_when_recovery_callback_failed(self):
+        p = self.provider()
+        rows, notices = self.add_turn(), []
+        agent = self.feedback_agent(p, notices=notices)
+        self.completed_feedback(agent, rows)
+        self.db._execute_write(lambda conn: conn.execute(
+            "UPDATE messages SET content='edited' WHERE message_uid='s1-1-assistant'"))
+        self.completed_feedback(agent, rows)
+
+        def unavailable(notice):
+            raise RuntimeError('driver unavailable during recovery')
+
+        agent.notice_callback = unavailable
+        self.db._execute_write(lambda conn: conn.execute(
+            "UPDATE messages SET content='answer' WHERE message_uid='s1-1-assistant'"))
+        self.completed_feedback(agent, rows)
+        agent.notice_callback = notices.append
+        self.db._execute_write(lambda conn: conn.execute(
+            "UPDATE messages SET content='edited again' WHERE message_uid='s1-1-assistant'"))
+        self.completed_feedback(agent, rows)
+        self.assertEqual(len(notices), 3)
+        self.assertEqual([notice.level for notice in notices], ['warn', 'info', 'warn'])
+        self.assertIn('暂停', notices[-1].text)
+
+    def test_q03_compaction_scope_keeps_pause_new_conversation_does_not_inherit(self):
+        p = self.provider()
+        first = self.add_turn()
+        p.sync_turn('q', 'a', messages=first)
+        self.db._execute_write(lambda conn: conn.execute(
+            "UPDATE messages SET content='edited' WHERE message_uid='s1-1-assistant'"))
+        paused = p.sync_turn('q', 'a', messages=first)['feedback']
+        self.db.end_session('s1', 'compression')
+        self.db.create_session('s2', 'cli', parent_session_id='s1')
+        p.on_session_switch('s2', parent_session_id='s1')
+        second = self.add_turn(sid='s2', number=2)
+        self.assertEqual(p.sync_turn('q', 'a', messages=second)['feedback'], paused)
+        self.db.create_session('fresh', 'cli')
+        p.on_session_switch('fresh', reset=True)
+        fresh = self.add_turn(sid='fresh')
+        self.assertNotIn('feedback', p.sync_turn('q', 'a', messages=fresh))
+        p.on_session_switch('s2', parent_session_id='s1')
+        self.assertEqual(p.sync_turn('q', 'a', messages=second)['feedback'], paused)
+
+    def test_q03_timeout_cannot_mark_model_fact_delivered_or_hide_next_fact(self):
+        p = self.provider()
+        rows = self.add_turn()
+        p.sync_turn('q', 'a', messages=rows)
+        self.db._execute_write(lambda conn: conn.execute(
+            "UPDATE messages SET content='edited' WHERE message_uid='s1-1-assistant'"))
+        p.sync_turn('q', 'a', messages=rows)
+        manager = MemoryManager(external_prefetch_timeout=0.05)
+        manager.add_provider(p)
+        self.addCleanup(manager.shutdown_all)
+        entered, release = threading.Event(), threading.Event()
+
+        def search(*args, **kwargs):
+            entered.set()
+            self.assertTrue(release.wait(5))
+            return {'memories': []}
+
+        try:
+            with patch.object(p._recall_client, 'search', side_effect=search):
+                self.assertEqual(manager.prefetch_all('meaningful input', session_id='s1'), '')
+                self.assertTrue(entered.is_set())
+                release.set()
+                manager._external_prefetch_threads[p.name].join(5)
+            with patch.object(p._recall_client, 'search', return_value={'memories': []}):
+                self.assertIn('暂停', manager.prefetch_all('next meaningful input', session_id='s1'))
+        finally:
+            release.set()
+
+    def test_q03_same_stored_id_other_profile_has_distinct_feedback_scope(self):
+        p = self.provider()
+        first = self.add_turn()
+        p.sync_turn('q', 'a', messages=first)
+        self.db._execute_write(lambda conn: conn.execute(
+            "UPDATE messages SET content='edited' WHERE message_uid='s1-1-assistant'"))
+        paused = p.sync_turn('q', 'a', messages=first)['feedback']
+        other_home = self.home / 'other-profile'
+        other_home.mkdir()
+        other = P.PersonalNowledgeMemProvider()
+        other_db = SessionDB(db_path=other_home / 'state.db')
+        self.addCleanup(other_db.close)
+        self.addCleanup(other.shutdown)
+        other_db.create_session('s1', 'cli')
+        other.initialize('s1', hermes_home=str(other_home), platform='cli', agent_context='primary')
+        self.assertNotEqual(p._observation_key(p._scope()), other._observation_key(other._scope()))
+        with patch.object(other._recall_client, 'search', return_value={'memories': []}):
+            self.assertNotIn('sync observation', other.prefetch('same stored ID question'))
+        self.assertEqual(other._archive_observations, {})
+        self.assertEqual(p.sync_turn('q', 'a', messages=first)['feedback'], paused)
+
+    def test_q03_cold_compatible_prefix_with_unfinished_tail_does_not_claim_normal(self):
+        p = self.provider()
+        rows = self.add_turn()
+        p.sync_turn('q', 'a', messages=rows)
+        self.db.append_message('s1', 'user', 'unfinished next input', message_uid='unfinished')
+        cold = self.provider()
+        with patch.object(cold._recall_client, 'search', return_value={'memories': []}):
+            self.assertNotIn('sync observation', cold.prefetch('meaningful input'))
+        self.assertEqual(cold._archive_observations, {})
+        self.assertEqual(len(self.writes()), 1)
+
+    def test_q03_actual_native_wire_contains_only_current_fact_keeps_root_history_and_archive_clean(self):
+        from run_agent import AIAgent
+        p = self.provider()
+        rows = self.add_turn()
+        p.sync_turn('q', 'a', messages=rows)
+        notices, wire = [], []
+        manager = MemoryManager()
+        manager.add_provider(p)
+        self.addCleanup(manager.shutdown_all)
+
+        def response(request):
+            wire.append(copy.deepcopy(request))
+            return types.SimpleNamespace(choices=[types.SimpleNamespace(message=types.SimpleNamespace(
+                content='Fixture completed response.', tool_calls=None, reasoning_content=None, reasoning=None),
+                finish_reason='stop')], model='test/model', usage=None)
+
+        with patch('model_tools.get_tool_definitions', return_value=[]), \
+             patch('model_tools.check_toolset_requirements', return_value={}), \
+             patch('agent.process_bootstrap.OpenAI'), \
+             patch('hermes_logging.setup_logging'), \
+             patch('agent.model_metadata.fetch_model_metadata', return_value={}), \
+             patch('agent.context_compressor.get_model_context_length', return_value=130000), \
+             patch('agent.title_generator.maybe_auto_title'), \
+             patch('run_agent._hermes_home', self.home):
+            agent = AIAgent(api_key='fixture-only', base_url='https://example.invalid/v1', model='test/model',
+                quiet_mode=True, skip_context_files=True, skip_memory=True, session_db=self.db, session_id='s1')
+        self.addCleanup(agent.close)
+        agent._memory_manager = manager
+        agent._compression_feasibility_checked = True
+        agent.context_compressor.threshold_tokens = 1000000
+        agent.save_trajectories = False
+        agent.notice_callback = notices.append
+        with patch.object(p._recall_client, 'search', return_value={'memories': []}), \
+             patch('agent.title_generator.maybe_auto_title'), \
+             patch.object(agent, '_interruptible_api_call', side_effect=response), \
+             patch.object(agent, '_interruptible_streaming_api_call', side_effect=response):
+            first_result = agent.run_conversation('A meaningful first native question',
+                conversation_history=self.db.get_messages_as_conversation('s1', include_row_ids=True))
+            self.assertTrue(manager.flush_pending(timeout=5))
+            self.assertTrue(first_result['completed'])
+            original_root = wire[0]['messages'][0]['content']
+            self.db._execute_write(lambda conn: conn.execute(
+                "UPDATE messages SET content='edited' WHERE message_uid='s1-1-assistant'"))
+            p.sync_turn('q', 'a', messages=rows)
+            result = agent.run_conversation('What is the current sync observation?',
+                conversation_history=self.db.get_messages_as_conversation('s1', include_row_ids=True))
+        self.assertTrue(manager.flush_pending(timeout=5))
+        self.assertTrue(result['completed'])
+        messages = wire[-1]['messages']
+        self.assertEqual(messages[0]['content'], original_root)
+        current_input = messages[-1]['content']
+        fact = current_input.split('NM Thread sync observation:\n', 1)[1].split('</memory-context>', 1)[0]
+        self.assertIn('暂停', fact)
+        self.assertIn('截至 ', fact)
+        for instruction in ('must ', 'should ', 'please ', '请', '修复', self.url, str(self.home), p._scope().thread_id):
+            self.assertNotIn(instruction, fact)
+        self.assertEqual(agent._cached_system_prompt, original_root)
+        self.assertNotIn('sync observation', json.dumps(messages[1:-1]))
+        for row in self.db.get_messages('s1'):
+            self.assertNotIn('NM Thread sync observation:', str(row.get('content')))
+        self.assertEqual(len(self.writes()), 2)
+
     def test_native_empty_rewind_checks_acknowledged_prefix(self):
         p = self.provider(source='cron')
         rows = self.add_turn()
         p.sync_turn('u', 'a', messages=rows)
-        self.assertEqual(p.sync_turn('u', 'a', messages=[])['status'], 'reconciliation-required')
+        self.assertEqual(p.sync_turn('u', 'a', messages=[])['status'], 'awaiting-branch-message')
         self.assertEqual(len(self.writes()), 1)
 
     def test_continuation_fork_and_new_session_thread_identity(self):
@@ -472,7 +799,10 @@ class ArchiveIntegrationTests(unittest.TestCase):
         result = INSTALLER.install(home, apply=True)
         installed = Path(result['plugin_dir'])
         self.assertTrue((installed / 'personal_cli.py').is_file())
-        self.assertIn('create --content-file', (installed / 'skills/nm-cli/SKILL.md').read_text())
+        installed_skill = (installed / 'skills/nm-cli/SKILL.md').read_text()
+        self.assertIn('python3 personal_cli.py create ', installed_skill)
+        create_example = installed_skill.split('python3 personal_cli.py create ', 1)[1].split('```', 1)[0]
+        self.assertIn('--content-file', create_example)
         self.assertEqual((home / 'MEMORY.md').read_text(), 'original memory')
         spec = importlib.util.spec_from_file_location('_nm_r3_installed', installed / '__init__.py', submodule_search_locations=[str(installed)])
         module = importlib.util.module_from_spec(spec)

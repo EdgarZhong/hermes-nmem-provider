@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Create with official nmem, then attach Hermes metadata; preview by default.
+"""Create approved Memory with provenance in one official API call; preview by default.
 
 Only Main may apply specifically approved content and destination. --apply is
 an execution switch, not an approval authority. Other management uses nmem.
@@ -8,9 +8,9 @@ from __future__ import annotations
 
 import argparse
 import importlib
+import importlib.util
 import json
 import os
-import subprocess
 import sys
 import types
 from pathlib import Path
@@ -65,7 +65,7 @@ def read_provenance(path: str) -> dict[str, Any]:
 
 
 class _BoundClient(PersonalMemClient):
-    """Freeze existing host resolution for both subprocess and metadata HTTP.
+    """Freeze existing host resolution for official CLI reads and Memory HTTP.
 
     Reuse client.py's env/config/default rules; --api-url is the official
     one-off override. No helper config, hardcoded endpoint or global env edits.
@@ -81,6 +81,8 @@ class _BoundClient(PersonalMemClient):
             raise ValueError("Invalid NM endpoint; credentials belong in host configuration")
         self.cli_env = os.environ.copy()
         self.cli_env["NMEM_API_URL"] = self._bound_url
+        self.cli_env.pop("NMEM_SPACE", None)
+        self.cli_env.pop("NMEM_SPACE_ID", None)
         # Pin even an empty key so CLI cannot pick up a different config later.
         self.cli_env["NMEM_API_KEY"] = self._bound_key
 
@@ -156,50 +158,30 @@ def _finish(client: PersonalMemClient, memory_id: str, provenance: dict[str, Any
                 "next_action": "Use attach with this ID and the same destination; do not create again"}
 
 
-def create_memory(client: _BoundClient, content: str, provenance: dict[str, Any],
-                  *, title: str | None = None, labels: list[str] | None = None,
-                  space: str | None = None) -> dict[str, Any]:
-    exe = _resolve_nmem()
-    if not exe:
-        raise ValueError("Official nmem executable not found; no creation attempted")
-    if Path(exe).suffix.lower() in {".cmd", ".bat"}:
-        # shell=False still invokes cmd.exe for batch shims. Do not interpolate
-        # arguments: cloud/native executables are the supported narrow path.
-        raise ValueError("Use a native nmem executable, not a batch shim; no creation attempted")
-    argv = [exe, "--json", "--api-url", client._api_url()]
-    argv.extend(["m", "add", "--stdin", "--source", "hermes-secretary"])
-    if space is not None:
-        argv.extend(["--space", space])
-    if title is not None:
-        argv.extend(["--title", title])
-    for label in labels or []:
-        argv.extend(["-l", label])
-    memory_id = None
-    try:
-        result = subprocess.run(argv, input=content.encode("utf-8"), capture_output=True,
-                                env=client.cli_env, timeout=60, shell=False)
-        if result.returncode != 0:
-            raise ValueError("CLI exited without confirmed creation")
-        memory_id = parse_created_id(result.stdout)
-        return _finish(client, memory_id, provenance, created=True)
-    except (Exception, KeyboardInterrupt) as exc:
-        # Communication can fail after launch too. Never report such an OS
-        # error as proof that creation did not happen, or retry automatically.
-        if memory_id is not None:
-            return {"status": "partial", "memory_id": memory_id, "creation": "confirmed",
-                    "metadata": "unconfirmed", "error_type": type(exc).__name__,
-                    "next_action": "Use attach with this ID and the same destination; do not create again"}
-        return {"status": "creation_unknown", "memory_id": None, "metadata": "not_attempted",
-                "error_type": type(exc).__name__,
-                "next_action": "Inspect with official nmem; do not blindly repeat create"}
+def _standalone():
+    source = Path(__file__).with_name("nmem_memory.py")
+    if not source.is_file():
+        source = Path.home() / "scrips/nmem-memory.py"
+    spec = importlib.util.spec_from_file_location("_nmem_memory_standalone", source)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+_STANDALONE = _standalone()
+
+
+def create_memory(client, content, provenance, *, title=None, labels=None, space=None):
+    return _STANDALONE.create_memory(client, content, {"hermes_provenance": provenance},
+                                     title=title, labels=labels, space=space, source="hermes-secretary")
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = _Parser(description=__doc__)
-    parser.add_argument("--api-url", help="Official one-off URL override, shared by both steps")
+    parser.add_argument("--api-url", help="Official one-off URL override, shared by CLI reads and API")
     sub = parser.add_subparsers(dest="command", required=True)
-    create = sub.add_parser("create", help="Official CLI creation, followed by metadata attachment")
-    create.add_argument("--content-file", required=True, help="Approved UTF-8 body, passed unchanged to CLI stdin")
+    create = sub.add_parser("create", help="One official API creation including provenance, then readback")
+    create.add_argument("--content-file", required=True, help="Approved UTF-8 body, passed unchanged to the API")
     create.add_argument("--title")
     create.add_argument("--label", "-l", action="append", default=[])
     create.add_argument("--space", help="Bound profile Space; pass explicitly, do not rely on ambient NMEM_SPACE")
@@ -222,7 +204,8 @@ def main(argv: list[str] | None = None) -> int:
                       "source_count": len(provenance["sources"]),
                       "notice": "No CLI or network calls. --apply is not user approval."}
         else:
-            client = _BoundClient(args.api_url)
+            client = (_STANDALONE.Client(args.api_url) if args.command == "create"
+                      else _BoundClient(args.api_url))
             if args.command == "create":
                 result = create_memory(client, content, provenance, title=args.title,
                                        labels=args.label, space=args.space)

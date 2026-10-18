@@ -128,8 +128,9 @@ class ProviderContextTests(unittest.TestCase):
                          P.MEMORY_CHECK, "Harness", "not a grant of permission",
                          "user-managed", "agent harnesses"):
             self.assertIn(expected, text)
+        self.assertIn('For approved Memory creation, use `python3 ~/scrips/nmem-memory.py create` to submit the content and `metadata.hermes_provenance` together; use the official `nmem` CLI for all other operations, including edits to ordinary fields, and correct erroneous creation metadata only by user-approved deletion and recreation.', text)
         for forbidden in ("Secretary", "Notebook", "candidate", "Candidate",
-                          "conversation_history", "proposal"):
+                          "proposal", "prefer updating or merging", "for NM reads and writes"):
             self.assertNotIn(forbidden, text)
 
     def test_bound_space_reaches_prompt_and_clients(self):

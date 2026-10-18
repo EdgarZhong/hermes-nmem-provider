@@ -1,7 +1,6 @@
 """Formal helper HTTP roundtrips against loopback; never a real NM service."""
 import copy
 import importlib
-import io
 import json
 import subprocess
 import sys
@@ -9,7 +8,6 @@ import threading
 import time
 import types
 import unittest
-from contextlib import redirect_stderr
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from unittest.mock import patch
@@ -210,25 +208,6 @@ class HTTPTests(unittest.TestCase):
                 C.PersonalMemClient().request_json("GET", "/memory")
             launch.assert_not_called()
         self.assertEqual(Handler.calls, [])
-
-    def test_creation_partial_repairs_same_id_without_recreating(self):
-        Handler.denied = True
-        client = CLI._BoundClient()
-        completed = subprocess.CompletedProcess([], 0, b'{"id":"created-exact-id"}')
-        with patch.object(CLI, "_resolve_nmem", return_value="/native/nmem"), \
-                patch.object(CLI.subprocess, "run", return_value=completed) as create, \
-                redirect_stderr(io.StringIO()) as receipt:
-            result = CLI.create_memory(client, "approved body", SOURCES)
-            self.assertEqual(result["status"], "partial")
-            self.assertEqual(result["memory_id"], "created-exact-id")
-            self.assertEqual(json.loads(receipt.getvalue())["memory_id"], "created-exact-id")
-            Handler.denied = False
-            repaired = CLI._finish(client, result["memory_id"], SOURCES, created=False)
-            create.assert_called_once()
-        self.assertEqual(repaired["status"], "complete")
-        self.assertEqual(repaired["creation"], "existing_id")
-        self.assertEqual([call[0] for call in Handler.calls], ["GET", "GET", "PATCH"])
-        self.assertEqual(Handler.memory["metadata"]["hermes_provenance"], SOURCES)
 
     def test_http_success_with_ignored_metadata_stays_partial_without_retry(self):
         Handler.ignore_metadata = True

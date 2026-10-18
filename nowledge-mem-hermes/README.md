@@ -10,7 +10,7 @@ This is the **EdgarZhong Personal Hermes fork** of the official `nowledge-co/com
 | Independent cron task's own main Session | No | No | Yes |
 | Noting, delegate/subagent, review and other auxiliary runtimes | No | No | No |
 
-No NM MCP server. No `nmem_*` model tools. No `queue_prefetch`, automatic distillation, MD mirroring or managed-skill outcome reporting. Agent-controlled NM operations use the existing terminal and `nmem` CLI. Background Intelligence must stay **disabled in NM itself**; this plugin does not change that setting.
+No NM MCP server. No `nmem_*` model tools. No `queue_prefetch`, automatic distillation, MD mirroring or managed-skill outcome reporting. Approved Memory creation uses the existing narrow helper through terminal; other permitted NM operations use official `nmem` CLI. Background Intelligence must stay **disabled in NM itself**; this plugin does not change that setting.
 
 Notebook/Noting owns the current Conversation's working state. NM owns durable personal knowledge and user-managed personal context. Memory mutation still requires the existing Secretary approval mechanism. Full design: [docs/PHASE3.md](docs/PHASE3.md).
 
@@ -18,9 +18,29 @@ Notebook/Noting owns the current Conversation's working state. NM owns durable p
 
 Use Python from your Hermes environment (the host's locked `ruamel.yaml` is used by the installer). Do not run the upstream curl installer, which would replace this fork with upstream policy.
 
+First obtain this checkout (or enter your existing checkout):
+
 ```bash
 git clone https://github.com/EdgarZhong/hermes-nmem-provider.git
 cd hermes-nmem-provider
+```
+
+The Memory creation tool is independent of Hermes: standard Python plus the running
+host's official `nmem` CLI and native `curl`, with no Python packages to install.
+Install the single file at the same path on this Mac and on the cloud host
+(`scrips` is the intended spelling); preserve any existing target before replacing it:
+
+```bash
+mkdir -p "$HOME/scrips"
+install -m 755 nowledge-mem-hermes/nmem_memory.py "$HOME/scrips/nmem-memory.py"
+python3 ~/scrips/nmem-memory.py create --help
+```
+
+Keep each host's existing NM configuration and credentials there; do not copy credentials
+from the development machine. The script body is not a user configuration file and needs
+no dotfiles symlink or global shell change. The following plugin install is separate.
+
+```bash
 # Preview: no user profile or NM writes.
 python3 nowledge-mem-hermes/install_personal.py --home "$HOME/.hermes"
 # Install only after reviewing the preview.
@@ -34,12 +54,9 @@ memory:
   provider: nowledge-mem
   memory_enabled: false
   user_profile_enabled: false
-skills:
-  external_dirs:
-    - plugins/nowledge-mem/skills
 ```
 
-The installer appends this profile-relative native skill root without replacing other skill settings, so `nm-cli` is discoverable in new root prompts and `skill_view`. Metadata HTTP requests also require a native `curl` executable; they use its default transport, keep secrets off command arguments, and fail explicitly if it is unavailable.
+The Provider directly supplies the creation instruction in its system prompt; this fork does not register or install an `nm-cli` Skill or append a native skill root. Other skill configuration is retained. Metadata HTTP requests also require a native `curl` executable; they use its default transport, keep secrets off command arguments, and fail explicitly if it is unavailable.
 
 Do **not** disable the whole `memory` toolset: some Hermes versions also gate external provider Prompt blocks through it. Restart Hermes after install. New conversations load the new prompt; an already-pinned old root prompt may require a normal host rebuild/new conversation. The installer does not rewrite old conversation prompts or enable background intelligence.
 
@@ -83,61 +100,78 @@ The provider's Bundle, recall client and Thread client are all constructed with 
 
 The provider requires a profile with the `terminal` tool (to run `nmem`) and the `memory` toolset (Hermes gates the provider prompt block through it). It does not register model-callable NM tools, MCP, or a fallback reader.
 
-## Thread capture and recovery
+## NM Thread synchronization and fork continuation
 
 The modern Hermes `MemoryManager` runs `sync_turn()` on its serialized background worker. This fork relies on that host contract, as the current official synchronous sync implementation does; older hosts that invoke it inline are not supported for latency guarantees. Do not register a second `post_llm_call` fallback.
 
-Interactive Secretary sessions use a **read-only** existing `secretary_session_bindings` lookup and the host's canonical History Foreground. Physical compaction continuations with the same Conversation Ref share an archive. No new Secretary identity is minted. Ordinary Hermes and standalone cron use their own Session identity. Thread IDs are namespaced `hermes-personal-<identity>` so the fork does not overwrite archives produced by the old integration.
+Interactive Secretary sessions use a **read-only** existing `secretary_session_bindings` lookup and the host's canonical History Foreground. Physical compaction continuations with the same Conversation Ref continue the same NM Thread branch. No new Secretary identity is minted. Ordinary Hermes and standalone cron use their own Session identity. Initial Thread IDs are namespaced `hermes-personal-<identity>`; later History forks create separate NM Threads without overwriting earlier ones.
 
-Only user/assistant prose and normalized timestamps are archived. Tool results, hidden/Noting scaffolding and recognized compaction summaries are excluded. This is **not a full tool/multimodal execution trace**. Hermes `state.db` remains authoritative and must be backed up.
+Only user/assistant prose and normalized timestamps are synchronized. Tool results, hidden/Noting scaffolding and recognized compaction summaries are excluded. A new fork Thread starts with a plugin-generated system message explaining its continuation. This is **not a full tool/multimodal execution trace**. Hermes `state.db` remains authoritative and must be backed up.
 
-Acknowledged transcript fingerprints are stored under `$HERMES_HOME/nowledge-mem-personal/receipts.sqlite3`; no transcript bodies or credentials are stored there. Only an affirmative JSON success acknowledgement advances the cursor; malformed, ambiguous, negative or mismatched Thread responses leave it unchanged. A subsequent completed turn retries. Session-end only retries the last snapshot already admitted by the completed-turn hook; it never admits an interrupted closing tail. Resuming retries at the next completed turn. A first batch uses official `threads import --file`; subsequent suffix imports carry the acknowledged message count and a stable idempotency key. A timeout after server commit can still cause an at-least-once retry; exactly-once delivery is not claimed.
+Acknowledged transcript fingerprints, branch locators and pending upload intent are stored under `$HERMES_HOME/nowledge-mem-personal/receipts.sqlite3`; no transcript bodies or credentials are stored there. Only an affirmative JSON success acknowledgement or matching same-Thread readback advances the cursor. Pending writes with unknown results are confirmed through read-only official CLI calls before any further upload; they are not blindly replayed. Session-end only uses the last snapshot already admitted by the completed-turn hook, never an interrupted closing tail. A first batch uses official `threads import --file`; subsequent suffix imports carry the acknowledged remote message count, including any continuation header, and a stable idempotency key. Global exactly-once delivery is not claimed.
 
-An edit/rewind that changes an already-archived prefix is deliberately **not silently appended or overwritten**. Sync returns and logs reconciliation-required; explicit archive reconciliation is a deployment operation, not yet implemented here. Unsupported combined summary/user carriers on non-Secretary hosts are not claimed lossless. Scope failures deny that observation rather than guess. Independent cron sync is allowed, but cron children remain excluded.
+When an edit/rewind changes an already-synchronized prefix, the plugin finds the longest shared prefix and creates a new NM Thread. Its first message identifies the preceding NM Thread and the last shared message by its real NM Message ID and owning NM Thread; subsequent messages contain only the divergent suffix. Common content is not uploaded again, earlier Threads remain intact, and later turns append to the current branch. An empty suffix waits for a real new message. An unconfirmed native anchor, wrong Space or unknown write pauses synchronization without inventing an ID or creating another replacement Thread. Unsupported combined summary/user carriers on non-Secretary hosts are not claimed lossless. Scope failures deny that observation rather than guess. Independent cron sync is allowed, but cron children remain excluded.
 
 ## Approved Memory creation and exact provenance
 
-Normal reading, editing and management use official `nmem`. The narrow helper
-creates through official CLI, takes its actual returned ID, then attaches only
-`metadata.hermes_provenance` to that same Memory. Main supplies approved natural
-language content, native `notebook:<type>` labels and exact sources. Read original
+Other permitted operations, including approved edits to ordinary Memory fields, use official `nmem`; only incorrect creation metadata requires specifically approved deletion followed by fresh creation. The independent single-file tool
+sends one official `POST /memories` with the approved body, title, labels, exact Space and
+arbitrary Metadata object; it never creates through CLI first or automatically
+retries. It does not recognize Main, query History or import any Hermes module. The Hermes caller supplies approved natural language content, native `notebook:<type>` labels and exact sources in `metadata.hermes_provenance`. Read original
 evidence with `conversation_history`; pointer titles and NM Threads are not the
 originals. `/propose-persistence`, a capacity notice or `--apply` is not approval.
 
 ```json
-{"version":1,"sources":[{"conversation_ref":"<actual Ref>","message_uid":"<actual UID>"}]}
+{"hermes_provenance":{"version":1,"sources":[{"conversation_ref":"<actual Ref>","message_uid":"<actual UID>"}]}}
 ```
 
 ```bash
 # Preview: no CLI/network calls. Always pass the profile's bound space explicitly.
-python3 "$HERMES_HOME/plugins/nowledge-mem/personal_cli.py" create \
+python3 ~/scrips/nmem-memory.py create \
   --space 'Work' \
-  --content-file approved.md --provenance-file provenance.json \
+  --content-file approved.md --metadata-file metadata.json \
   --title 'Approved understanding' --label 'notebook:situation'
 # Execute the specific approved content/destination by adding --apply.
-# If creation succeeded but attachment failed, use the returned actual ID:
-python3 "$HERMES_HOME/plugins/nowledge-mem/personal_cli.py" attach ACTUAL_ID \
-  --provenance-file provenance.json --apply
 ```
 
 Connection uses the running host's existing NM configuration. A one-off
-`--api-url` comes before `create`/`attach` and is shared by CLI and Metadata HTTP;
-use the same destination during repair. Credentials never enter command arguments
-or diagnostics. Metadata attachment preserves unrelated fields from its read.
-These two steps are not atomic: `partial` retains the created ID, while
-`creation_unknown` must be investigated through official CLI before any new write.
-Repair never creates again. The previous `read`/`write`/expected-SHA/History
-membership protocol is removed. See the installed [nm-cli skill](skills/nm-cli/SKILL.md)
-for exact statuses and the small-script basic-check boundary.
+`--api-url` comes before `create`. The resolved endpoint/key are pinned
+for official CLI reads and the existing HTTP transport. The CLI resolves the
+selected Space name/alias to its real stored ID; ambient Space variables do not
+override the chosen destination. Credentials never enter arguments or diagnostics.
+Creation uses the documented 32,768-character body / 200-character title limits.
+`--metadata-file` accepts any JSON object (including `{}`); the tool does not
+interpret source identities or require a Hermes-specific field. Help includes
+plain-text/JSON examples, label repetition, Space selection, connection precedence
+and failure meanings. Help and preview do not read NM configuration or invoke CLI/network.
 
-Current target-service limitation: an authorized metadata-only PATCH on an existing synthetic Memory was accepted but ignored `hermes_provenance`; a subsequent GET confirmed the attachment was absent while the original fields were unchanged. The helper correctly reported `partial`. Metadata persistence is **not verified or complete**; do not treat HTTP success, a created Memory, or skill discovery as complete provenance delivery. The exact supported update contract remains unresolved; see root [CLAUDE.md](../CLAUDE.md) for the current evidence and deployment state.
+The API response's actual `memory.id` is retained before readback. `complete`
+requires the approved body/title, inherited labels, exact Space and provenance
+to match subsequent official CLI / precise-ID GET reads. A successful POST echo
+alone is insufficient. `partial` preserves the known ID and pending sources;
+`creation_unknown` means no confirmed ID and must be investigated through the
+official CLI before further writes. Neither result retries creation, falls back
+to CLI creation or replaces a whole Memory with PUT.
+
+The old plugin-local `personal_cli.py create --provenance-file ...` only wraps
+that legacy provenance object as Metadata and forwards creation to this same implementation;
+installed compatibility wrappers load `~/scrips/nmem-memory.py`. It is not a second creator.
+The old explicit `attach` command is retained with its original metadata-only
+semantics for compatibility. An authorized attempt on an existing synthetic
+Memory was accepted but ignored `hermes_provenance`; its subsequent GET and
+`partial` history remain valid. This create-route change does not repair that
+old ID or establish a supported arbitrary Metadata update contract. Do not
+repeat the old failed target without a new specific contract and authorization.
+See [PHASE3 §4.1](docs/PHASE3.md)
+and root [CLAUDE.md](../CLAUDE.md) for current source/install/real-service evidence.
+Model-facing helper guidance lives directly in the personal Provider system prompt; no Skill invocation is required. Source, disk installation, loaded runtime and real-service acceptance are tracked separately. The old A synthetic Memory remains a failed provenance sample and is never repaired or rebuilt; the prepared B scene was stopped before any model call.
 
 ## Tests and boundaries
 
 ```bash
 # Run from this repository root; keep the Hermes PM interpreter and canonical runner.
 mkdir -p temp-r3-personal/runner
-for name in test_personal test_security test_r3_provider test_r3_thread; do
+for name in test_personal test_security test_r3_provider test_r3_thread test_http test_nm_wiring test_memory_create_api; do
   ln -sfn "$PWD/nowledge-mem-hermes/personal_tests/$name.py" "temp-r3-personal/runner/$name.py"
 done
 HERMES_PYTHON="$PWD/../hermes-secretary/.venv/bin/python" \
