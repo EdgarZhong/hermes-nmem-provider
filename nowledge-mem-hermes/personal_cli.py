@@ -161,7 +161,7 @@ def _finish(client: PersonalMemClient, memory_id: str, provenance: dict[str, Any
 def _standalone():
     source = Path(__file__).with_name("nmem_memory.py")
     if not source.is_file():
-        source = Path.home() / "scrips/nmem-memory.py"
+        source = Path.home() / "scripts/nmem-memory.py"
     spec = importlib.util.spec_from_file_location("_nmem_memory_standalone", source)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)

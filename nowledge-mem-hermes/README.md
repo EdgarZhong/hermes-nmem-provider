@@ -27,13 +27,15 @@ cd hermes-nmem-provider
 
 The Memory creation tool is independent of Hermes: standard Python plus the running
 host's official `nmem` CLI and native `curl`, with no Python packages to install.
-Install the single file at the same path on this Mac and on the cloud host
-(`scrips` is the intended spelling); preserve any existing target before replacing it:
+For a first installation, place the single file at the same path on this Mac and the cloud host
+(`scripts` is the intended spelling). Existing prepared tools are protected originals:
+do not overwrite, delete, unlock or bypass protection without explicit maintenance authorization.
+Read the source before extending it; use a separate `~/scripts/custom/` copy marked unaccepted.
 
 ```bash
-mkdir -p "$HOME/scrips"
-install -m 755 nowledge-mem-hermes/nmem_memory.py "$HOME/scrips/nmem-memory.py"
-python3 ~/scrips/nmem-memory.py create --help
+mkdir -p "$HOME/scripts"
+install -m 555 nowledge-mem-hermes/nmem_memory.py "$HOME/scripts/nmem-memory.py"
+python3 ~/scripts/nmem-memory.py create --help
 ```
 
 Keep each host's existing NM configuration and credentials there; do not copy credentials
@@ -98,7 +100,7 @@ Spaces are managed in NM; Hermes profiles are managed in Hermes. The link is one
 
 By default the provider's Bundle, recall client and Thread client use the resolved `space`. An optional `thread_sync_space` string overrides only automatic Thread synchronization; Bundle, recall and the model's Active space keep using `space`. For the agent's **manual** `nmem` commands, there is no wrapper: the system prompt's `Active space` section requires explicit `--space "<space>"` on every command and forbids access to another space unless the user explicitly asks. Without that prompt constraint, ambient CLI state could target another lane.
 
-To keep a study profile's context and Memory operations in its study Space while automatically synchronizing Threads to Default, use:
+For an explicitly requested independent automatic Thread target, the configuration syntax is:
 
 ```json
 {"space": "考研复习", "thread_sync_space": "default"}
@@ -135,12 +137,16 @@ originals. `/propose-persistence`, a capacity notice or `--apply` is not approva
 
 ```bash
 # Preview: no CLI/network calls. Always pass the profile's bound space explicitly.
-python3 ~/scrips/nmem-memory.py create \
+python3 ~/scripts/nmem-memory.py create \
   --space 'Work' \
   --content-file approved.md --metadata-file metadata.json \
   --title 'Approved understanding' --label 'notebook:situation'
 # Execute the specific approved content/destination by adding --apply.
 ```
+
+Both preview and apply require explicit nonempty `--space`; use `--space default`
+for Default. Missing, empty and whitespace-only selectors fail before file/configuration
+reads or CLI/network calls. The tool never infers a destination from a Profile or ambient Space.
 
 Connection uses the running host's existing NM configuration. A one-off
 `--api-url` comes before `create`. The resolved endpoint/key are pinned
@@ -163,7 +169,7 @@ to CLI creation or replaces a whole Memory with PUT.
 
 The old plugin-local `personal_cli.py create --provenance-file ...` only wraps
 that legacy provenance object as Metadata and forwards creation to this same implementation;
-installed compatibility wrappers load `~/scrips/nmem-memory.py`. It is not a second creator.
+installed compatibility wrappers load `~/scripts/nmem-memory.py`. It is not a second creator.
 The old explicit `attach` command is retained with its original metadata-only
 semantics for compatibility. An authorized attempt on an existing synthetic
 Memory was accepted but ignored `hermes_provenance`; its subsequent GET and
@@ -171,8 +177,8 @@ Memory was accepted but ignored `hermes_provenance`; its subsequent GET and
 old ID or establish a supported arbitrary Metadata update contract. Do not
 repeat the old failed target without a new specific contract and authorization.
 See [PHASE3 §4.1](docs/PHASE3.md)
-and root [CLAUDE.md](../CLAUDE.md) for current source/install/real-service evidence.
-Model-facing helper guidance lives directly in the personal Provider system prompt; no Skill invocation is required. Source, disk installation, loaded runtime and real-service acceptance are tracked separately. The old A synthetic Memory remains a failed provenance sample and is never repaired or rebuilt; the prepared B scene was stopped before any model call.
+and root [CLAUDE.md](../CLAUDE.md) for current acceptance evidence and boundaries.
+Model-facing helper guidance lives directly in the personal Provider system prompt; no Skill invocation is required. Source, disk installation, loaded runtime and real-service acceptance are tracked separately. Historical failed provenance samples remain failed at their recorded versions; later successful samples do not repair those IDs.
 
 ## Tests and boundaries
 
@@ -187,12 +193,12 @@ HERMES_PYTHON="$PWD/../hermes-secretary/.venv/bin/python" \
   ../hermes-secretary/scripts/run_tests.sh "$PWD/temp-r3-personal/runner/" -q
 ```
 
-The ignored source symlinks avoid pytest treating the hyphenated plugin directory as an importable package; each test still resolves its original source location. The canonical runner isolates each file in its own process. Current local verification (2026-10-17): 4 personal files **95 PASS**; upstream `test_release_contract` + `test_space_resolution` **16 PASS**. No real NM was contacted. The P1 tests load retained upstream helpers with an ABC fixture. The P3 tests use real Hermes SessionDB, canonical History and MemoryManager egress/background sync with a disposable local HTTP server. The maintained personal/security tests cover the current policy and narrow metadata smoke checks. Runtime databases live in this checkout's ignored `temp-r3-personal/` tree; they do not access a real profile or NM account. Other upstream suites are not the personal policy contract. See [docs/TEST_REPORT.md](docs/TEST_REPORT.md) for historical baseline evidence only; actual run versions and coverage are recorded in root [CLAUDE.md](../CLAUDE.md).
+The ignored source symlinks avoid pytest treating the hyphenated plugin directory as an importable package; each test still resolves its original source location. The canonical runner isolates each file in its own process. Select affected files or node IDs for normal maintenance rather than repeating the whole suite. Tests use synthetic clients or disposable loopback HTTP, real Hermes SessionDB, canonical History and MemoryManager where appropriate. Runtime databases live in this checkout's ignored `temp-r3-personal/` tree; they do not access a real profile or NM account. Other upstream suites are not the personal policy contract. [docs/TEST_REPORT.md](docs/TEST_REPORT.md) is historical baseline evidence only; current versions and effective evidence are indexed in root [CLAUDE.md](../CLAUDE.md).
 
 公共History由 **EdgarZhong/hermes-secretary** 的新版 `conversation_history` 承担，原生 `session_search` 保留。本插件不monkey-patch Core工具；旧PHASE3的session_search改造计划已撤销。
 
-Earlier real Thread/Bundle samples and the current failed Metadata attachment are recorded separately in root CLAUDE.md; server deduplication beyond those samples and cloud deployment remain unverified
-and unauthorized in this round. An ordinary host run may auto-sync Threads; always
-select a local fixture endpoint before isolated development, never a real account
-for a supposedly read-only trial. The native finalizer must admit only completed,
-uninterrupted, nonfailed turns; public host verdict wiring belongs to Secretary.
+Acceptance and deployment records are indexed in root [CLAUDE.md](../CLAUDE.md) and the
+[Secretary operations log](../../hermes-secretary/docs/operations-log.md). An ordinary host
+run may auto-sync Threads; always select a local fixture endpoint for isolated development.
+The native finalizer admits only completed, uninterrupted, nonfailed turns; public host
+verdict wiring belongs to Secretary. No sample establishes global exactly-once delivery.

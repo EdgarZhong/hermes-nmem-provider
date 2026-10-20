@@ -234,7 +234,9 @@ def _bound_cli(client: Client, args: list[str]) -> dict[str, Any]:
 def _creation_space(client: Client, space: str | None) -> str:
     # Preserve the existing name/alias selector via the official resolver. Do
     # not send a display name as space_id or inherit an ambient CLI lane.
-    reference = "default" if space is None or not space.strip() else space
+    if not isinstance(space, str) or not space.strip():
+        raise ValueError("Explicit Space is required; use --space default for Default")
+    reference = space
     value = _bound_cli(client, ["spaces", "show", "--", reference])
     selected = value.get("space", value)
     if not isinstance(selected, dict):
@@ -328,9 +330,10 @@ Supply real source identities from your application's original evidence; this to
 never reads agent history, infers sources, or grants approval.
 
 Example (preview; zero CLI/network calls):
-  python3 ~/scrips/nmem-memory.py create --content-file approved.txt --title 'Approved title' --label notebook:situation --space 'Exact Space' --metadata-file metadata.json
+  python3 ~/scripts/nmem-memory.py create --content-file approved.txt --title 'Approved title' --label notebook:situation --space 'Exact Space' --metadata-file metadata.json
 Add --apply only for the specifically approved create; repeat --label for multiple labels.
-Use the exact Space name/alias/ID; --space '' selects Default and ignores ambient NMEM_SPACE.
+--space is required in preview and apply. Use an exact nonempty Space name/alias/ID;
+use --space default for Default. Missing/empty Space never inherits NMEM_SPACE.
 Connection: --api-url (before create), then NMEM_API_URL, then the official
 ~/.nowledge-mem/config.json apiUrl/api_url, then http://127.0.0.1:14242;
 NMEM_API_KEY (including empty) overrides apiKey/api_key in that same config.
@@ -355,10 +358,12 @@ def main(argv=None):
     create.add_argument("--metadata-file", required=True, metavar="METADATA", help="UTF-8 JSON object; sent unchanged, including caller-owned provenance")
     create.add_argument("--title", help="Approved title (at most 200 characters)")
     create.add_argument("--label", "-l", action="append", default=[], help="Approved native label; repeat for multiple labels")
-    create.add_argument("--space", help="Exact Space name/alias/ID; pass explicitly, empty string selects Default")
+    create.add_argument("--space", required=True, help="Required nonempty Space name/alias/ID; use default for Default")
     create.add_argument("--apply", action="store_true", help="Perform the specifically approved attempt; absent means offline preview")
     try:
         args = parser.parse_args(argv)
+        if not args.space.strip():
+            raise ValueError("Explicit nonempty --space is required")
         content = read_text(args.content_file)
         metadata = json.loads(read_text(args.metadata_file))
         if not isinstance(metadata, dict):
@@ -377,7 +382,7 @@ def main(argv=None):
     except (Exception, KeyboardInterrupt) as exc:
         result = {"status": "failed", "creation": "not_attempted", "metadata": "not_attempted",
                   "error_type": type(exc).__name__,
-                  "message": "Preparation failed; consult --help and host NM configuration"}
+                  "message": "Preparation failed; provide explicit nonempty --space and consult --help"}
     print(json.dumps(result, ensure_ascii=False), flush=True)
     return {"preview": 0, "complete": 0, "partial": 2, "creation_unknown": 3}.get(result["status"], 1)
 

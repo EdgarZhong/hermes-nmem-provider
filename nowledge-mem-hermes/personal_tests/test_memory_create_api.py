@@ -11,9 +11,9 @@ import subprocess
 import threading
 import time
 import unittest
-from contextlib import redirect_stderr
+from contextlib import redirect_stderr, redirect_stdout
 from http.server import ThreadingHTTPServer
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import test_http as HTTP
 
@@ -185,7 +185,7 @@ class CreationAPITests(unittest.TestCase):
     def test_unresolved_space_and_oversize_content_do_not_create(self):
         for reference in ("unknown-space", ""):
             with self.subTest(reference=reference):
-                # A missing explicit selector is canonical Default; fixture has none.
+                # Empty selectors must fail before any creation; unresolved names also fail.
                 with self.assertRaises(ValueError):
                     CLI.create_memory(self.client, "approved", METADATA, space=reference)
         with self.assertRaises(ValueError):
@@ -283,3 +283,31 @@ class CreationAPITests(unittest.TestCase):
                     override = CLI.Client(self.url)
                     self.assertEqual((override._api_url(), override._api_key()), (self.url, ""))
                 self.assertEqual(client._api_key(), KEY)
+
+
+class ExplicitSpaceTests(unittest.TestCase):
+    def test_cli_missing_or_empty_space_refuses_before_io_despite_ambient(self):
+        for selection in ([], ["--space", ""], ["--space", "   "]):
+            for apply in ([], ["--apply"]):
+                with self.subTest(selection=selection, apply=apply):
+                    output = io.StringIO()
+                    with patch.dict(os.environ, {"NMEM_SPACE": "ambient", "NMEM_SPACE_ID": "ambient-id"}), \
+                            patch.object(CLI, "Client") as client, \
+                            patch.object(CLI, "read_text") as read, \
+                            patch.object(CLI, "_curl_json") as curl, redirect_stdout(output):
+                        code = CLI.main(["create", "--content-file", "body.txt",
+                                         "--metadata-file", "metadata.json", *selection, *apply])
+                    self.assertEqual(code, 1)
+                    self.assertEqual(json.loads(output.getvalue())["creation"], "not_attempted")
+                    client.assert_not_called()
+                    read.assert_not_called()
+                    curl.assert_not_called()
+
+    def test_direct_creation_missing_or_empty_space_cannot_resolve_or_post(self):
+        client = Mock()
+        for selection in (None, "", "   "):
+            with self.subTest(selection=selection), patch.object(CLI, "_bound_cli") as resolver:
+                with self.assertRaises(ValueError):
+                    CLI.create_memory(client, "approved", {}, space=selection)
+                resolver.assert_not_called()
+                client.request_json.assert_not_called()

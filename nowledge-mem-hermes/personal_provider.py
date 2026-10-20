@@ -53,7 +53,7 @@ _MAINTENANCE = """## Memory maintenance
 The built-in MEMORY.md and USER.md stores are retired as active memory sources. Do not write or
 update them with the native memory tool. This provider registers no nmem_* model tools or MCP server.
 
-For approved Memory creation, use `python3 ~/scrips/nmem-memory.py create` to submit the content and `metadata.hermes_provenance` together; use the official `nmem` CLI for all other operations, including edits to ordinary fields, and correct erroneous creation metadata only by user-approved deletion and recreation.
+For approved Memory creation, use `python3 ~/scripts/nmem-memory.py create` to submit the content and `metadata.hermes_provenance` together; use the official `nmem` CLI for all other operations, including edits to ordinary fields, and correct erroneous creation metadata only by user-approved deletion and recreation.
 
 Before creating a Memory, search for duplicates. Write confirmed facts with their actual uncertainty
 and scope; do not store unconfirmed
